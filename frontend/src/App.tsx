@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { getWeeklyMileage, getRunsInRange } from "./api";
 import type { WeeklyMileagePoint, Run } from "./api";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 function toISODate(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -105,29 +114,53 @@ function App() {
             <h2 className="font-semibold mb-2 text-slate-100">
               Weekly mileage (last 12 weeks)
             </h2>
-            <div className="h-64 flex flex-col items-center justify-center text-slate-300 text-sm">
-              {isLoadingMileage && (
-                <p className="text-slate-500">Loading mileage...</p>
-              )}
-
-              {!isLoadingMileage && mileageError && (
+            <div className="mt-4 h-64">
+              {isLoadingMileage ? (
+                <p className="text-slate-500 text-sm">Loading mileage...</p>
+              ) : mileageError ? (
                 <p className="text-red-400 text-sm">{mileageError}</p>
-              )}
-
-              {!isLoadingMileage && !mileageError && mileage.length === 0 && (
-                <p className="text-slate-500">No mileage data yet.</p>
-              )}
-
-              {!isLoadingMileage && !mileageError && mileage.length > 0 && (
-                <ul className="space-y-1 text-center">
-                  {mileage.map((w) => (
-                    <li key={w.week_start}>
-                      <span className="text-sky-300">{w.week_start}</span>
-                      {" — "}
-                      {(w.total_mileage ?? 0).toFixed(2)} mi
-                    </li>
-                  ))}
-                </ul>
+              ) : mileage.length === 0 ? (
+                <p className="text-slate-500 text-sm">No mileage data yet.</p>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={mileage}
+                    margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis
+                      dataKey="week_start"
+                      tickFormatter={(value: string) => value.slice(5)}
+                      tick={{ fontSize: 12, fill: "#94a3b8" }}
+                      dy={8}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 12, fill: "#94a3b8" }}
+                      tickFormatter={(value: number) => value.toFixed(1)}
+                      width={40}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#020617",
+                        borderColor: "#1e293b",
+                        borderRadius: 8,
+                      }}
+                      labelFormatter={(value: string) => `Week of ${value}`}
+                      formatter={(value: number) => [
+                        `${value.toFixed(2)} mi`,
+                        "Mileage",
+                      ]}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="total_mileage"
+                      stroke="#38bdf8"
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
               )}
             </div>
           </div>
