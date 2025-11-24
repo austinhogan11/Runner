@@ -1,14 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { getWeeklyMileage, getRunsInRange } from "./api";
 import type { WeeklyMileagePoint, Run } from "./api";
 import {
-  LineChart,
+  ComposedChart,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Area,
 } from "recharts";
 
 function toISODate(date: Date): string {
@@ -36,15 +37,63 @@ function getWeekRange(offset: number): { start: string; end: string } {
   };
 }
 
+type MileageRange = "12w" | "6m" | "1y";
+
+function sliceMileageForRange(
+  all: WeeklyMileagePoint[],
+  range: MileageRange
+): WeeklyMileagePoint[] {
+  const nWeeks = range === "12w" ? 12 : range === "6m" ? 26 : 52; // approx weeks
+  return all.slice(-nWeeks);
+}
+
 function App() {
   // 0 = this week, -1 = previous week, etc.
   const [weekOffset, setWeekOffset] = useState(0);
   const [mileage, setMileage] = useState<WeeklyMileagePoint[]>([]);
   const [isLoadingMileage, setIsLoadingMileage] = useState(true);
   const [mileageError, setMileageError] = useState<string | null>(null);
+  const [range, setRange] = useState<MileageRange>("12w");
   const [runs, setRuns] = useState<Run[]>([]);
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [runsError, setRunsError] = useState<string | null>(null);
+
+  const chartData = useMemo(
+    () => sliceMileageForRange(mileage, range),
+    [mileage, range]
+  );
+
+  const avgMileage = useMemo(() => {
+    if (chartData.length === 0) return 0;
+    const total = chartData.reduce(
+      (sum, pt) => sum + pt.total_mileage,
+      0
+    );
+    return total / chartData.length;
+  }, [chartData]);
+
+  const rangeLabel = useMemo(() => {
+    if (range === "12w") return "12 weeks";
+    if (range === "6m") return "6 months";
+    return "1 year";
+  }, [range]);
+
+  const monthLabelMap = useMemo(() => {
+    let prevMonth = "";
+    const map = new Map<string, string>();
+
+    chartData.forEach((pt) => {
+      const d = new Date(pt.week_start);
+      const month = d
+        .toLocaleString("en-US", { month: "short" })
+        .toUpperCase();
+      const label = month !== prevMonth ? month : "";
+      prevMonth = month;
+      map.set(pt.week_start, label);
+    });
+
+    return map;
+  }, [chartData]);
 
   const weeklyDistance = runs.reduce((sum, run) => sum + run.distance_mi, 0);
   const { start: weekStart, end: weekEnd } = getWeekRange(weekOffset);
@@ -60,7 +109,8 @@ function App() {
       try {
         setIsLoadingMileage(true);
         setMileageError(null);
-        const data = await getWeeklyMileage();
+        // Fetch up to 52 weeks so the front-end can slice for 12w / 6m / 1y ranges
+        const data = await getWeeklyMileage(52);
         setMileage(data);
       } catch (err) {
         console.error(err);
@@ -109,68 +159,107 @@ function App() {
 
       <main className="max-w-5xl mx-auto px-4 pb-12 space-y-8">
         {/* GRAPHS ROW */}
-        <section className="grid gap-6 md:grid-cols-2">
-          <div className="bg-slate-800/80 border border-slate-700 rounded-2xl shadow-lg shadow-black/40 p-4">
-            <h2 className="font-semibold mb-2 text-slate-100">
-              Weekly mileage (last 12 weeks)
-            </h2>
-            <div className="mt-4 h-64">
-              {isLoadingMileage ? (
-                <p className="text-slate-500 text-sm">Loading mileage...</p>
-              ) : mileageError ? (
-                <p className="text-red-400 text-sm">{mileageError}</p>
-              ) : mileage.length === 0 ? (
-                <p className="text-slate-500 text-sm">No mileage data yet.</p>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={mileage}
-                    margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis
-                      dataKey="week_start"
-                      tickFormatter={(value: string) => value.slice(5)}
-                      tick={{ fontSize: 12, fill: "#94a3b8" }}
-                      dy={8}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 12, fill: "#94a3b8" }}
-                      tickFormatter={(value: number) => value.toFixed(1)}
-                      width={40}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#020617",
-                        borderColor: "#1e293b",
-                        borderRadius: 8,
-                      }}
-                      labelFormatter={(value: string) => `Week of ${value}`}
-                      formatter={(value: number) => [
-                        `${value.toFixed(2)} mi`,
-                        "Mileage",
-                      ]}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="total_mileage"
-                      stroke="#38bdf8"
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                      activeDot={{ r: 5 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
+        <section className="space-y-2">
+          {/* Range controls + average */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="inline-flex rounded-full bg-slate-800/80 p-1 border border-slate-700">
+              {(["12w", "6m", "1y"] as MileageRange[]).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRange(r)}
+                  className={`px-3 py-1 text-xs md:text-sm rounded-full transition ${
+                    range === r
+                      ? "bg-sky-500 text-slate-900 font-semibold"
+                      : "bg-transparent text-slate-300 hover:bg-slate-700/60"
+                  }`}
+                >
+                  {r === "12w" && "12 weeks"}
+                  {r === "6m" && "6 months"}
+                  {r === "1y" && "1 year"}
+                </button>
+              ))}
             </div>
           </div>
 
-          <div className="bg-slate-800/80 border border-slate-700 rounded-2xl shadow-lg shadow-black/40 p-4">
-            <h2 className="font-semibold mb-2 text-slate-100">Second graph</h2>
-            <div className="h-64 flex items-center justify-center text-slate-500 text-sm">
-              Another graph placeholder
-              <br />
-              (pace trends, distance distribution, etc.)
+          {/* Graph cards */}
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="bg-slate-800/80 border border-slate-700 rounded-2xl shadow-lg shadow-black/40 p-4">
+              <div className="flex items-baseline justify-between gap-3 mb-2">
+                <h2 className="font-semibold text-slate-100">Weekly mileage</h2>
+                <p className="text-xs text-slate-400">
+                  Avg ({rangeLabel}):{" "}
+                  <span className="text-sky-300 font-semibold">
+                    {avgMileage.toFixed(1)} mi/week
+                  </span>
+                </p>
+              </div>
+              <div className="mt-4 h-64">
+                {isLoadingMileage ? (
+                  <p className="text-slate-500 text-sm">Loading mileage...</p>
+                ) : mileageError ? (
+                  <p className="text-red-400 text-sm">{mileageError}</p>
+                ) : chartData.length === 0 ? (
+                  <p className="text-slate-500 text-sm">No mileage data yet.</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart
+                      data={chartData}
+                      margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis
+                        dataKey="week_start"
+                        tickFormatter={(value: string) =>
+                          monthLabelMap.get(value) ?? ""
+                        }
+                        tick={{ fontSize: 12, fill: "#94a3b8" }}
+                        dy={8}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 12, fill: "#94a3b8" }}
+                        tickFormatter={(value: number) => value.toFixed(1)}
+                        width={40}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "#020617",
+                          borderColor: "#1e293b",
+                          borderRadius: 8,
+                        }}
+                        labelFormatter={(value: string) => `Week of ${value}`}
+                        formatter={(value: number) => [
+                          `${value.toFixed(2)} mi`,
+                          "Mileage",
+                        ]}
+                      />
+                      {/* Filled area under the line */}
+                      <Area
+                        type="monotone"
+                        dataKey="total_mileage"
+                        stroke="none"
+                        fill="#38bdf822"
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="total_mileage"
+                        stroke="#38bdf8"
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                        activeDot={{ r: 5 }}
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-slate-800/80 border border-slate-700 rounded-2xl shadow-lg shadow-black/40 p-4">
+              <h2 className="font-semibold mb-2 text-slate-100">Second graph</h2>
+              <div className="h-64 flex items-center justify-center text-slate-500 text-sm">
+                Another graph placeholder
+                <br />
+                (pace trends, distance distribution, etc.)
+              </div>
             </div>
           </div>
         </section>

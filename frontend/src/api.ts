@@ -17,8 +17,13 @@ export interface Run {
 }
 
 // -------- API Functions -------- //
-export async function getWeeklyMileage(): Promise<WeeklyMileagePoint[]> {
-  const res = await fetch(`${API_URL}/runs/weekly_mileage`);
+export async function getWeeklyMileage(
+  maxWeeks: number = 52
+): Promise<WeeklyMileagePoint[]> {
+  const url = new URL(`${API_URL}/runs/weekly_mileage`);
+  url.searchParams.set("weeks", String(maxWeeks));
+
+  const res = await fetch(url.toString());
   if (!res.ok) {
     throw new Error("Failed to fetch weekly mileage");
   }
