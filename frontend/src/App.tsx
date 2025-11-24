@@ -10,6 +10,8 @@ import {
   Tooltip,
   ResponsiveContainer,
   Area,
+  BarChart,
+  Bar,
 } from "recharts";
 
 function toISODate(date: Date): string {
@@ -35,6 +37,33 @@ function getWeekRange(offset: number): { start: string; end: string } {
     start: toISODate(monday),
     end: toISODate(sunday),
   };
+}
+
+const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function buildWeekDaySeries(runs: Run[], weekStartISO: string) {
+  const monday = new Date(weekStartISO);
+  monday.setHours(0, 0, 0, 0);
+
+  const series = [] as { date: string; label: string; total: number }[];
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const iso = toISODate(d);
+
+    const total = runs
+      .filter((run) => run.date === iso)
+      .reduce((sum, run) => sum + run.distance_mi, 0);
+
+    series.push({
+      date: iso,
+      label: DAY_LABELS[i],
+      total,
+    });
+  }
+
+  return series;
 }
 
 type MileageRange = "12w" | "6m" | "1y";
@@ -97,6 +126,11 @@ function App() {
 
   const weeklyDistance = runs.reduce((sum, run) => sum + run.distance_mi, 0);
   const { start: weekStart, end: weekEnd } = getWeekRange(weekOffset);
+
+  const weeklyDayData = useMemo(
+    () => buildWeekDaySeries(runs, weekStart),
+    [runs, weekStart]
+  );
 
   const handlePrevWeek = () => setWeekOffset((w) => w - 1);
   const handleNextWeek = () => {
@@ -254,11 +288,62 @@ function App() {
             </div>
 
             <div className="bg-slate-800/80 border border-slate-700 rounded-2xl shadow-lg shadow-black/40 p-4">
-              <h2 className="font-semibold mb-2 text-slate-100">Second graph</h2>
-              <div className="h-64 flex items-center justify-center text-slate-500 text-sm">
-                Another graph placeholder
-                <br />
-                (pace trends, distance distribution, etc.)
+              <div className="flex items-baseline justify-between gap-3 mb-2">
+                <h2 className="font-semibold text-slate-100">
+                  This week&apos;s mileage by day
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Week total:&nbsp;
+                  <span className="text-sky-300 font-semibold">
+                    {weeklyDistance.toFixed(2)} mi
+                  </span>
+                </p>
+              </div>
+              <div className="mt-4 h-64">
+                {isLoadingRuns ? (
+                  <p className="text-slate-500 text-sm">Loading weekly graph...</p>
+                ) : runsError ? (
+                  <p className="text-red-400 text-sm">{runsError}</p>
+                ) : weeklyDayData.length === 0 ? (
+                  <p className="text-slate-500 text-sm">
+                    No runs logged for this week.
+                  </p>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={weeklyDayData}
+                      margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                      <XAxis
+                        dataKey="label"
+                        tick={{ fontSize: 12, fill: "#94a3b8" }}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 12, fill: "#94a3b8" }}
+                        tickFormatter={(value: number) => value.toFixed(1)}
+                        width={40}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "#020617",
+                          borderColor: "#1e293b",
+                          borderRadius: 8,
+                        }}
+                        labelFormatter={(_, payload) =>
+                          payload && payload[0]
+                            ? `Date: ${payload[0].payload.date}`
+                            : ""
+                        }
+                        formatter={(value: number) => [
+                          `${value.toFixed(2)} mi`,
+                          "Mileage",
+                        ]}
+                      />
+                      <Bar dataKey="total" fill="#38bdf8" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </div>
           </div>
