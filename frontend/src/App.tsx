@@ -45,7 +45,7 @@ function buildWeekDaySeries(runs: Run[], weekStartISO: string) {
   const monday = new Date(weekStartISO);
   monday.setHours(0, 0, 0, 0);
 
-  const series = [] as { date: string; label: string; total: number }[];
+  const series: { date: string; label: string; total: number }[] = [];
 
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday);
@@ -101,12 +101,6 @@ function App() {
     return total / chartData.length;
   }, [chartData]);
 
-  const rangeLabel = useMemo(() => {
-    if (range === "12w") return "12 weeks";
-    if (range === "6m") return "6 months";
-    return "1 year";
-  }, [range]);
-
   const monthLabelMap = useMemo(() => {
     let prevMonth = "";
     const map = new Map<string, string>();
@@ -158,31 +152,31 @@ function App() {
   }, []);
 
   useEffect(() => {
-  async function loadRunsForWeek() {
-    try {
-      setIsLoadingRuns(true);
-      setRunsError(null);
+    async function loadRunsForWeek() {
+      try {
+        setIsLoadingRuns(true);
+        setRunsError(null);
 
-      const { start, end } = getWeekRange(weekOffset);
-      const data = await getRunsInRange(start, end);
-      setRuns(data);
-    } catch (err) {
-      console.error(err);
-      setRunsError("Failed to load runs for this week");
-    } finally {
-      setIsLoadingRuns(false);
+        const { start, end } = getWeekRange(weekOffset);
+        const data = await getRunsInRange(start, end);
+        setRuns(data);
+      } catch (err) {
+        console.error(err);
+        setRunsError("Failed to load runs for this week");
+      } finally {
+        setIsLoadingRuns(false);
+      }
     }
-  }
 
-  loadRunsForWeek();
-}, [weekOffset]);
+    loadRunsForWeek();
+  }, [weekOffset]);
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       {/* HEADER */}
       <header className="py-10 text-center">
-        <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-          <span className="px-4 py-1 rounded-full bg-sky-500/10 text-sky-300 shadow-lg shadow-sky-500/30 border border-sky-500/40">
+        <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+          <span className="inline-block px-6 py-2 rounded-full bg-sky-500/10 text-sky-300 shadow-lg shadow-sky-500/30 border border-sky-500/40">
             Runner Dashboard
           </span>
         </h1>
@@ -194,34 +188,36 @@ function App() {
       <main className="max-w-5xl mx-auto px-4 pb-12 space-y-8">
         {/* GRAPHS ROW */}
         <section className="space-y-2">
-          {/* Range controls + average */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="inline-flex rounded-full bg-slate-800/80 p-1 border border-slate-700">
-              {(["12w", "6m", "1y"] as MileageRange[]).map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setRange(r)}
-                  className={`px-3 py-1 text-xs md:text-sm rounded-full transition ${
-                    range === r
-                      ? "bg-sky-500 text-slate-900 font-semibold"
-                      : "bg-transparent text-slate-300 hover:bg-slate-700/60"
-                  }`}
-                >
-                  {r === "12w" && "12 weeks"}
-                  {r === "6m" && "6 months"}
-                  {r === "1y" && "1 year"}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Graph cards */}
           <div className="grid gap-6 md:grid-cols-2">
+            {/* WEEKLY MILEAGE CARD */}
             <div className="bg-slate-800/80 border border-slate-700 rounded-2xl shadow-lg shadow-black/40 p-4">
               <div className="flex items-baseline justify-between gap-3 mb-2">
-                <h2 className="font-semibold text-slate-100">Weekly mileage</h2>
+                <div className="flex items-center gap-3">
+                  <h2 className="font-semibold text-slate-100">
+                    Weekly mileage
+                  </h2>
+                  {/* Compact range pill inside the card */}
+                  <div className="inline-flex rounded-full bg-slate-900/60 p-1 border border-slate-700/80">
+                    {(["12w", "6m", "1y"] as MileageRange[]).map((r) => (
+                      <button
+                        key={r}
+                        onClick={() => setRange(r)}
+                        className={`px-2.5 py-0.5 text-[11px] md:text-xs rounded-full transition ${
+                          range === r
+                            ? "bg-sky-500 text-slate-900 font-semibold"
+                            : "bg-transparent text-slate-300 hover:bg-slate-700/60"
+                        }`}
+                      >
+                        {r === "12w" && "12w"}
+                        {r === "6m" && "6m"}
+                        {r === "1y" && "1y"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <p className="text-xs text-slate-400">
-                  Avg ({rangeLabel}):{" "}
+                  Avg:{" "}
                   <span className="text-sky-300 font-semibold">
                     {avgMileage.toFixed(1)} mi/week
                   </span>
@@ -287,6 +283,7 @@ function App() {
               </div>
             </div>
 
+            {/* WEEKLY MILEAGE BY DAY CARD */}
             <div className="bg-slate-800/80 border border-slate-700 rounded-2xl shadow-lg shadow-black/40 p-4">
               <div className="flex items-baseline justify-between gap-3 mb-2">
                 <h2 className="font-semibold text-slate-100">
@@ -301,7 +298,9 @@ function App() {
               </div>
               <div className="mt-4 h-64">
                 {isLoadingRuns ? (
-                  <p className="text-slate-500 text-sm">Loading weekly graph...</p>
+                  <p className="text-slate-500 text-sm">
+                    Loading weekly graph...
+                  </p>
                 ) : runsError ? (
                   <p className="text-red-400 text-sm">{runsError}</p>
                 ) : weeklyDayData.length === 0 ? (
@@ -314,7 +313,11 @@ function App() {
                       data={weeklyDayData}
                       margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
                     >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="#1e293b"
+                        vertical={false}
+                      />
                       <XAxis
                         dataKey="label"
                         tick={{ fontSize: 12, fill: "#94a3b8" }}
@@ -325,6 +328,7 @@ function App() {
                         width={40}
                       />
                       <Tooltip
+                        cursor={false} // remove big white hover rectangle
                         contentStyle={{
                           backgroundColor: "#020617",
                           borderColor: "#1e293b",
@@ -340,7 +344,17 @@ function App() {
                           "Mileage",
                         ]}
                       />
-                      <Bar dataKey="total" fill="#38bdf8" radius={[4, 4, 0, 0]} />
+                      <Bar
+                        dataKey="total"
+                        fill="#38bdf8"
+                        radius={[4, 4, 0, 0]}
+                        // subtle glow on hover
+                        activeBar={{
+                          fill: "#38bdf8",
+                          stroke: "#e0f2fe",
+                          strokeWidth: 2,
+                        }}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 )}
@@ -352,20 +366,20 @@ function App() {
         {/* WEEKLY RUN LOG */}
         <section className="bg-slate-800/80 border border-slate-700 rounded-2xl shadow-lg shadow-black/40 p-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-              <div>
-                <h2 className="font-semibold text-slate-100">
-                  This week&apos;s runs
-                </h2>
-                <p className="text-xs text-slate-500">
-                  {weekStart} → {weekEnd} • Total:{" "}
-                  <span className="text-sky-300">
-                    {weeklyDistance.toFixed(2)} mi
-                  </span>
-                </p>
-                <p className="text-[10px] text-slate-600">
-                  Week offset: {weekOffset} (0 = current week)
-                </p>
-              </div>
+            <div>
+              <h2 className="font-semibold text-slate-100">
+                This week&apos;s runs
+              </h2>
+              <p className="text-xs text-slate-500">
+                {weekStart} → {weekEnd} • Total:{" "}
+                <span className="text-sky-300">
+                  {weeklyDistance.toFixed(2)} mi
+                </span>
+              </p>
+              <p className="text-[10px] text-slate-600">
+                Week offset: {weekOffset} (0 = current week)
+              </p>
+            </div>
 
             <div className="flex items-center gap-3">
               <button
@@ -384,7 +398,6 @@ function App() {
             </div>
           </div>
 
-          {/* Placeholder list – to be wired to GET /runs */}
           <div className="space-y-3">
             {isLoadingRuns && (
               <p className="text-sm text-slate-500">Loading runs...</p>
@@ -434,7 +447,8 @@ function App() {
 
                     {/* Future: heart rate, elevation, GPS, etc. */}
                     <div className="mt-2 text-[10px] uppercase tracking-wide text-slate-600">
-                      Click to view details (HR, pace, elevation, GPS) — coming soon
+                      Click to view details (HR, pace, elevation, GPS) — coming
+                      soon
                     </div>
                   </article>
                 ))}
