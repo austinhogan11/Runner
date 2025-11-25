@@ -1,6 +1,6 @@
-import { useEffect, useState, useMemo } from "react";
-import { getWeeklyMileage, getRunsInRange } from "./api";
-import type { WeeklyMileagePoint, Run } from "./api";
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { getWeeklyMileage, getRunsInRange, createRun } from "./api";
+import type { WeeklyMileagePoint, Run, RunCreate } from "./api";
 import {
   ComposedChart,
   Line,
@@ -15,21 +15,38 @@ import {
 } from "recharts";
 
 function toISODate(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  // Format as YYYY-MM-DD using the *local* date, so it matches the
+  // strings we get from the backend (and from <input type="date"/>).
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
-// Monday–Sunday window for a given offset (0 = this week, -1 = last, etc.)
+// Parse a YYYY-MM-DD string as a *local* date (no timezone shift).
+function fromISODateLocal(iso: string): Date {
+  const [year, month, day] = iso.split("-").map(Number);
+  const d = new Date(year, month - 1, day);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// Return an ISO week window that always runs Monday (start) through Sunday (end).
+// `offset` is in whole weeks relative to the *current* week: 0 = this week, -1 = last week, etc.
 function getWeekRange(offset: number): { start: string; end: string } {
-  const now = new Date();
+  const today = new Date();
 
-  // JS: 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-  const day = now.getDay();
-  const daysSinceMonday = (day + 6) % 7; // 0 if Monday, 1 if Tuesday, ... 6 if Sunday
+  // JS getDay(): 0 = Sunday, 1 = Monday, ..., 6 = Saturday.
+  // Convert that to "days since Monday" where Monday = 0, Tuesday = 1, ..., Sunday = 6.
+  const jsDay = today.getDay();
+  const daysSinceMonday = (jsDay + 6) % 7;
 
-  const monday = new Date(now);
-  monday.setHours(0, 0, 0, 0);
+  // Normalize to the Monday of the *current* week, then add `offset` weeks.
+  const monday = new Date(today);
   monday.setDate(monday.getDate() - daysSinceMonday + offset * 7);
+  monday.setHours(0, 0, 0, 0);
 
+  // Sunday is always 6 days after Monday in this model.
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
 
@@ -42,8 +59,8 @@ function getWeekRange(offset: number): { start: string; end: string } {
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function buildWeekDaySeries(runs: Run[], weekStartISO: string) {
-  const monday = new Date(weekStartISO);
-  monday.setHours(0, 0, 0, 0);
+  // Use local date parsing so the week is Monday-Sunday correctly
+  const monday = fromISODateLocal(weekStartISO);
 
   const series: { date: string; label: string; total: number }[] = [];
 
@@ -86,6 +103,17 @@ function App() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [runsError, setRunsError] = useState<string | null>(null);
+  const [isSavingRun, setIsSavingRun] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newRun, setNewRun] = useState<RunCreate>({
+    date: toISODate(new Date()),
+    title: "",
+    notes: "",
+    distance_mi: 0,
+    duration: "00:00:00",
+    pace: "",
+  });
 
   const chartData = useMemo(
     () => sliceMileageForRange(mileage, range),
@@ -106,7 +134,7 @@ function App() {
     const map = new Map<string, string>();
 
     chartData.forEach((pt) => {
-      const d = new Date(pt.week_start);
+      const d = fromISODateLocal(pt.week_start);
       const month = d
         .toLocaleString("en-US", { month: "short" })
         .toUpperCase();
@@ -132,6 +160,52 @@ function App() {
     setWeekOffset((w) => (w < 0 ? w + 1 : w));
   };
 
+  const handleNewRunChange = (field: keyof RunCreate, value: string) => {
+    setNewRun((prev) => ({
+      ...prev,
+      [field]: field === "distance_mi" ? Number(value) : value,
+    }));
+  };
+
+  const loadRunsForWeek = useCallback(async () => {
+    try {
+      setIsLoadingRuns(true);
+      setRunsError(null);
+
+      const { start, end } = getWeekRange(weekOffset);
+      const data = await getRunsInRange(start, end);
+      setRuns(data);
+    } catch (err) {
+      console.error(err);
+      setRunsError("Failed to load runs for this week");
+    } finally {
+      setIsLoadingRuns(false);
+    }
+  }, [weekOffset]);
+
+  const handleSubmitNewRun = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setIsSavingRun(true);
+      setSaveError(null);
+      await createRun(newRun);
+      // reset some fields but keep date/duration/pace as last used
+      setNewRun((prev) => ({
+        ...prev,
+        title: "",
+        notes: "",
+        distance_mi: 0,
+      }));
+      setShowAddForm(false);
+      await loadRunsForWeek();
+    } catch (err) {
+      console.error(err);
+      setSaveError("Failed to save run. Please try again.");
+    } finally {
+      setIsSavingRun(false);
+    }
+  };
+
   useEffect(() => {
     async function loadMileage() {
       try {
@@ -152,24 +226,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    async function loadRunsForWeek() {
-      try {
-        setIsLoadingRuns(true);
-        setRunsError(null);
-
-        const { start, end } = getWeekRange(weekOffset);
-        const data = await getRunsInRange(start, end);
-        setRuns(data);
-      } catch (err) {
-        console.error(err);
-        setRunsError("Failed to load runs for this week");
-      } finally {
-        setIsLoadingRuns(false);
-      }
-    }
-
     loadRunsForWeek();
-  }, [weekOffset]);
+  }, [loadRunsForWeek]);
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
@@ -231,7 +289,7 @@ function App() {
                 ) : chartData.length === 0 ? (
                   <p className="text-slate-500 text-sm">No mileage data yet.</p>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minHeight={220}>
                     <ComposedChart
                       data={chartData}
                       margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
@@ -308,7 +366,7 @@ function App() {
                     No runs logged for this week.
                   </p>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minHeight={220}>
                     <BarChart
                       data={weeklyDayData}
                       margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
@@ -383,6 +441,12 @@ function App() {
 
             <div className="flex items-center gap-3">
               <button
+                onClick={() => setShowAddForm((open) => !open)}
+                className="px-3 py-1.5 rounded-full border border-sky-500/60 bg-sky-500/10 text-sm text-sky-200 hover:bg-sky-500/20 shadow shadow-sky-500/30 transition"
+              >
+                {showAddForm ? "Cancel" : "Add run"}
+              </button>
+              <button
                 onClick={handlePrevWeek}
                 className="px-3 py-1.5 rounded-full border border-slate-600 text-sm text-slate-200 hover:bg-slate-700/80 transition"
               >
@@ -398,6 +462,100 @@ function App() {
             </div>
           </div>
 
+          {showAddForm && (
+            <form
+              onSubmit={handleSubmitNewRun}
+              className="mb-4 rounded-xl border border-slate-700 bg-slate-900/60 p-3 space-y-3"
+            >
+              {saveError && (
+                <p className="text-xs text-red-400">{saveError}</p>
+              )}
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="flex flex-col text-xs text-slate-300 gap-1">
+                  Date
+                  <input
+                    type="date"
+                    value={newRun.date}
+                    onChange={(e) =>
+                      handleNewRunChange("date", e.target.value)
+                    }
+                    className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                  />
+                </label>
+                <label className="flex flex-col text-xs text-slate-300 gap-1 md:col-span-2">
+                  Title
+                  <input
+                    type="text"
+                    value={newRun.title}
+                    onChange={(e) =>
+                      handleNewRunChange("title", e.target.value)
+                    }
+                    className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                    placeholder="Easy run, Long run, Workout, etc."
+                  />
+                </label>
+              </div>
+              <div className="grid gap-3 md:grid-cols-4">
+                <label className="flex flex-col text-xs text-slate-300 gap-1">
+                  Distance (mi)
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={newRun.distance_mi}
+                    onChange={(e) =>
+                      handleNewRunChange("distance_mi", e.target.value)
+                    }
+                    className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                  />
+                </label>
+                <label className="flex flex-col text-xs text-slate-300 gap-1">
+                  Duration (hh:mm:ss)
+                  <input
+                    type="text"
+                    value={newRun.duration}
+                    onChange={(e) =>
+                      handleNewRunChange("duration", e.target.value)
+                    }
+                    className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                    placeholder="01:00:00"
+                  />
+                </label>
+                <label className="flex flex-col text-xs text-slate-300 gap-1">
+                  Pace
+                  <input
+                    type="text"
+                    value={newRun.pace}
+                    onChange={(e) =>
+                      handleNewRunChange("pace", e.target.value)
+                    }
+                    className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                    placeholder="8:30/mi"
+                  />
+                </label>
+                <label className="flex flex-col text-xs text-slate-300 gap-1 md:col-span-1 md:col-start-4">
+                  Notes
+                  <input
+                    type="text"
+                    value={newRun.notes}
+                    onChange={(e) =>
+                      handleNewRunChange("notes", e.target.value)
+                    }
+                    className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                    placeholder="How it felt, terrain, etc."
+                  />
+                </label>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="submit"
+                  disabled={isSavingRun}
+                  className="px-3 py-1.5 rounded-full border border-sky-500/60 bg-sky-500/20 text-sm text-sky-200 hover:bg-sky-500/30 shadow shadow-sky-500/40 transition disabled:opacity-40"
+                >
+                  {isSavingRun ? "Saving..." : "Save run"}
+                </button>
+              </div>
+            </form>
+          )}
           <div className="space-y-3">
             {isLoadingRuns && (
               <p className="text-sm text-slate-500">Loading runs...</p>

@@ -16,6 +16,15 @@ export interface Run {
   pace: string;
 }
 
+export interface RunCreate {
+  date: string;
+  title: string;
+  notes: string;
+  distance_mi: number;
+  duration: string;
+  pace: string;
+}
+
 // -------- API Functions -------- //
 export async function getWeeklyMileage(
   maxWeeks: number = 52
@@ -42,5 +51,21 @@ export async function getRunsInRange(
   if (!res.ok) {
     throw new Error("Failed to fetch runs");
   }
+  return res.json();
+}
+
+export async function createRun(payload: RunCreate): Promise<Run> {
+  const res = await fetch(`${API_URL}/runs/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to create run");
+  }
+
   return res.json();
 }
