@@ -207,12 +207,14 @@ function App() {
     await updateRun(id, payload);
     cancelEditing();
     await loadRunsForWeek();
+    await loadMileage();
   };
 
   const handleDelete = async (id: number) => {
     await deleteRun(id);
     if (editingId === id) cancelEditing();
     await loadRunsForWeek();
+    await loadMileage();
   };
 
   const loadRunsForWeek = useCallback(async () => {
@@ -231,6 +233,20 @@ function App() {
     }
   }, [weekOffset]);
 
+  const loadMileage = useCallback(async () => {
+    try {
+      setIsLoadingMileage(true);
+      setMileageError(null);
+      const data = await getWeeklyMileage(52);
+      setMileage(data);
+    } catch (err) {
+      console.error(err);
+      setMileageError("Failed to load weekly mileage");
+    } finally {
+      setIsLoadingMileage(false);
+    }
+  }, []);
+
   const handleSubmitNewRun = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -246,6 +262,7 @@ function App() {
       }));
       setShowAddForm(false);
       await loadRunsForWeek();
+      await loadMileage();
     } catch (err) {
       console.error(err);
       setSaveError("Failed to save run. Please try again.");
@@ -255,23 +272,8 @@ function App() {
   };
 
   useEffect(() => {
-    async function loadMileage() {
-      try {
-        setIsLoadingMileage(true);
-        setMileageError(null);
-        // Fetch up to 52 weeks so the front-end can slice for 12w / 6m / 1y ranges
-        const data = await getWeeklyMileage(52);
-        setMileage(data);
-      } catch (err) {
-        console.error(err);
-        setMileageError("Failed to load weekly mileage");
-      } finally {
-        setIsLoadingMileage(false);
-      }
-    }
-
     loadMileage();
-  }, []);
+  }, [loadMileage]);
 
   useEffect(() => {
     loadRunsForWeek();
