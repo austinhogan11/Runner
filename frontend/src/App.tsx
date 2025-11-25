@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { getWeeklyMileage, getRunsInRange, createRun } from "./api";
+import { getWeeklyMileage, getRunsInRange, createRun, updateRun, deleteRun } from "./api";
 import type { WeeklyMileagePoint, Run, RunCreate } from "./api";
 import {
   ComposedChart,
@@ -112,8 +112,11 @@ function App() {
     notes: "",
     distance_mi: 0,
     duration: "00:00:00",
+    run_type: "easy",
     pace: "",
   });
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editData, setEditData] = useState<Partial<Run>>({});
 
   const chartData = useMemo(
     () => sliceMileageForRange(mileage, range),
@@ -165,6 +168,51 @@ function App() {
       ...prev,
       [field]: field === "distance_mi" ? Number(value) : value,
     }));
+  };
+
+  const startEditing = (run: Run) => {
+    setEditingId(run.id);
+    setEditData({
+      title: run.title,
+      notes: run.notes ?? "",
+      distance_mi: run.distance_mi,
+      duration: run.duration,
+      run_type: run.run_type,
+      date: run.date,
+    });
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditData({});
+  };
+
+  const handleEditChange = (field: keyof Run, value: string) => {
+    setEditData((prev) => ({
+      ...prev,
+      [field]: field === "distance_mi" ? Number(value) : value,
+    }));
+  };
+
+  const handleUpdate = async (id: number) => {
+    // Send only fields the backend accepts
+    const payload = {
+      title: editData.title,
+      notes: editData.notes,
+      distance_mi: editData.distance_mi,
+      duration: editData.duration,
+      run_type: editData.run_type,
+      date: editData.date,
+    };
+    await updateRun(id, payload);
+    cancelEditing();
+    await loadRunsForWeek();
+  };
+
+  const handleDelete = async (id: number) => {
+    await deleteRun(id);
+    if (editingId === id) cancelEditing();
+    await loadRunsForWeek();
   };
 
   const loadRunsForWeek = useCallback(async () => {
@@ -521,6 +569,19 @@ function App() {
                   />
                 </label>
                 <label className="flex flex-col text-xs text-slate-300 gap-1">
+                  Run type
+                  <select
+                    value={newRun.run_type}
+                    onChange={(e) => handleNewRunChange("run_type", e.target.value)}
+                    className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                  >
+                    <option value="easy">Easy</option>
+                    <option value="long">Long Run</option>
+                    <option value="workout">Workout</option>
+                    <option value="race">Race</option>
+                  </select>
+                </label>
+                <label className="flex flex-col text-xs text-slate-300 gap-1">
                   Pace
                   <input
                     type="text"
@@ -586,14 +647,36 @@ function App() {
                           {run.title}
                         </h3>
                       </div>
-                      <div className="text-right text-xs text-slate-400">
-                        <div className="text-sky-300 font-semibold">
+                      <div className="text-right text-xs text-slate-400 flex items-center gap-2">
+                        <div className="text-sky-300 font-semibold whitespace-nowrap">
                           {run.distance_mi.toFixed(2)} mi
                         </div>
-                        <div>
+                        <div className="whitespace-nowrap">
                           {run.duration} • {run.pace}
                         </div>
+                        {editingId !== run.id && (
+                          <>
+                            <button
+                              onClick={() => startEditing(run)}
+                              className="px-2 py-1 rounded-full border border-slate-600 text-[11px] text-slate-200 hover:bg-slate-700/80 transition"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDelete(run.id)}
+                              className="px-2 py-1 rounded-full border border-red-500/60 bg-red-500/10 text-[11px] text-red-200 hover:bg-red-500/20 transition"
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
                       </div>
+                    </div>
+
+                    <div className="mt-1 text-[10px] text-slate-400">
+                      <span className="inline-block px-2 py-0.5 rounded-full border border-slate-600 bg-slate-800/60">
+                        {run.run_type}
+                      </span>
                     </div>
 
                     {/* Notes */}
@@ -608,6 +691,76 @@ function App() {
                       Click to view details (HR, pace, elevation, GPS) — coming
                       soon
                     </div>
+                    {editingId === run.id ? (
+                      <div className="mt-3 border-t border-slate-700 pt-3">
+                        <div className="grid gap-3 md:grid-cols-4">
+                          <label className="flex flex-col text-xs text-slate-300 gap-1">
+                            Title
+                            <input
+                              type="text"
+                              value={(editData.title as string) ?? ""}
+                              onChange={(e) => handleEditChange("title", e.target.value)}
+                              className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                            />
+                          </label>
+                          <label className="flex flex-col text-xs text-slate-300 gap-1">
+                            Distance (mi)
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={Number(editData.distance_mi ?? run.distance_mi)}
+                              onChange={(e) => handleEditChange("distance_mi", e.target.value)}
+                              className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                            />
+                          </label>
+                          <label className="flex flex-col text-xs text-slate-300 gap-1">
+                            Duration (hh:mm:ss)
+                            <input
+                              type="text"
+                              value={(editData.duration as string) ?? run.duration}
+                              onChange={(e) => handleEditChange("duration", e.target.value)}
+                              className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                            />
+                          </label>
+                          <label className="flex flex-col text-xs text-slate-300 gap-1">
+                            Run type
+                            <select
+                              value={(editData.run_type as string) ?? run.run_type}
+                              onChange={(e) => handleEditChange("run_type", e.target.value)}
+                              className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                            >
+                              <option value="easy">Easy</option>
+                              <option value="long">Long Run</option>
+                              <option value="workout">Workout</option>
+                              <option value="race">Race</option>
+                            </select>
+                          </label>
+                        </div>
+                        <label className="mt-3 flex flex-col text-xs text-slate-300 gap-1">
+                          Notes
+                          <input
+                            type="text"
+                            value={(editData.notes as string) ?? (run.notes ?? "")}
+                            onChange={(e) => handleEditChange("notes", e.target.value)}
+                            className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                          />
+                        </label>
+                        <div className="mt-3 flex justify-end gap-2">
+                          <button
+                            onClick={() => handleUpdate(run.id)}
+                            className="px-3 py-1.5 rounded-full border border-sky-500/60 bg-sky-500/20 text-sm text-sky-200 hover:bg-sky-500/30 shadow shadow-sky-500/40 transition"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={cancelEditing}
+                            className="px-3 py-1.5 rounded-full border border-slate-600 text-sm text-slate-200 hover:bg-slate-700/80 transition"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </article>
                 ))}
               </div>

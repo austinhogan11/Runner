@@ -13,6 +13,7 @@ export interface Run {
   notes: string | null;
   distance_mi: number;
   duration: string;
+  run_type: string;
   pace: string;
 }
 
@@ -22,6 +23,7 @@ export interface RunCreate {
   notes: string;
   distance_mi: number;
   duration: string;
+  run_type: string;
   pace: string;
 }
 
@@ -68,4 +70,19 @@ export async function createRun(payload: RunCreate): Promise<Run> {
   }
 
   return res.json();
+}
+
+export async function updateRun(id: number, data: Partial<Run>): Promise<Run> {
+  const res = await fetch(`${API_URL}/runs/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update run");
+  return res.json();
+}
+
+export async function deleteRun(id: number): Promise<void> {
+  const res = await fetch(`${API_URL}/runs/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete run");
 }
