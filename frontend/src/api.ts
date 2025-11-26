@@ -36,6 +36,12 @@ export interface RunSplit {
   elev_gain_ft?: number | null;
 }
 
+export interface RunTrack {
+  geojson: { type: string; coordinates: [number, number][] } | null;
+  bounds: { minLat: number; minLon: number; maxLat: number; maxLon: number } | null;
+  points_count: number | null;
+}
+
 export interface Run {
   id: number;
   date: string;
@@ -165,5 +171,11 @@ export async function getRunSeries(id: number): Promise<RunSeries> {
 export async function getRunSplits(id: number): Promise<RunSplit[]> {
   const res = await fetch(`${API_URL}/runs/${id}/splits`);
   if (!res.ok) throw new Error("Failed to fetch splits");
+  return res.json();
+}
+
+export async function getRunTrack(id: number): Promise<RunTrack> {
+  const res = await fetch(`${API_URL}/runs/${id}/track`);
+  if (!res.ok) throw new Error("Failed to fetch track");
   return res.json();
 }

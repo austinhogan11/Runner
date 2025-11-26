@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { getWeeklyMileage, getRunsInRange, createRun, updateRun, deleteRun, getWeeklyGoal, upsertWeeklyGoal, importRun, getRunMetrics, getRunSeries, getRunSplits } from "./api";
-import type { WeeklyMileagePoint, Run, RunCreate, WeeklyGoal, RunMetrics, RunSeries, RunSplit } from "./api";
+import { getWeeklyMileage, getRunsInRange, createRun, updateRun, deleteRun, getWeeklyGoal, upsertWeeklyGoal, importRun, getRunMetrics, getRunSeries, getRunSplits, getRunTrack } from "./api";
+import type { WeeklyMileagePoint, Run, RunCreate, WeeklyGoal, RunMetrics, RunSeries, RunSplit, RunTrack } from "./api";
 import {
   ComposedChart,
   Line,
@@ -146,6 +146,8 @@ function App() {
   const [detailsSplits, setDetailsSplits] = useState<RunSplit[] | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [hrHoverIdx, setHrHoverIdx] = useState<number | null>(null);
+  const [detailsTrack, setDetailsTrack] = useState<RunTrack | null>(null);
+  const [detailsTab, setDetailsTab] = useState<"splits" | "hr">("splits");
 
   const chartData = useMemo(
     () => sliceMileageForRange(mileage, range),
@@ -258,10 +260,17 @@ function App() {
     try {
       setIsLoadingDetails(true);
       setDetailsId(run.id);
-      const [m, s, sp] = await Promise.all([getRunMetrics(run.id), getRunSeries(run.id), getRunSplits(run.id)]);
+      const [m, s, sp, tr] = await Promise.all([
+        getRunMetrics(run.id),
+        getRunSeries(run.id),
+        getRunSplits(run.id),
+        getRunTrack(run.id),
+      ]);
       setDetailsMetrics(m);
       setDetailsSeries(s);
       setDetailsSplits(sp);
+      setDetailsTrack(tr);
+      setDetailsTab("splits");
     } catch (e) {
       console.error(e);
     } finally {
@@ -942,11 +951,52 @@ function App() {
                         {isLoadingDetails ? (
                           <p className="text-xs text-slate-400">Loading...</p>
                         ) : (
-                          <div className="grid gap-4 md:grid-cols-2">
-                            {/* HR Zones */}
+                          <div className="grid gap-6 md:grid-cols-2">
+                            {/* Left: Map */}
                             <div className="text-xs">
-                              <h4 className="text-slate-200 font-semibold mb-2">Heart rate</h4>
-                              {detailsMetrics?.hr_zones ? (
+                              <h4 className="text-slate-200 font-semibold mb-2">Route</h4>
+                              {detailsTrack?.geojson && detailsTrack?.bounds ? (
+                                (() => {
+                                  const coords = detailsTrack!.geojson!.coordinates;
+                                  const b = detailsTrack!.bounds!;
+                                  const W = 360, H = 240, pad = 12;
+                                  const lonToX = (lon: number) => pad + ((lon - b.minLon) / (b.maxLon - b.minLon || 1)) * (W - pad * 2);
+                                  const latToY = (lat: number) => pad + ((b.maxLat - lat) / (b.maxLat - b.minLat || 1)) * (H - pad * 2);
+                                  const path = coords.map(([lon, lat], i) => `${i ? "L" : "M"}${lonToX(lon)},${latToY(lat)}`).join(" ");
+                                  const start = coords[0];
+                                  const end = coords[coords.length - 1];
+                                  return (
+                                    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="rounded-lg bg-slate-900/40 border border-slate-700">
+                                      {/* frame */}
+                                      <rect x={0.5} y={0.5} width={W-1} height={H-1} rx={8} ry={8} fill="transparent" stroke="#0f172a"/>
+                                      {/* path */}
+                                      <path d={path} fill="none" stroke="#38bdf8" strokeWidth={2} />
+                                      {/* start/end */}
+                                      <circle cx={lonToX(start[0])} cy={latToY(start[1])} r={3} fill="#22c55e" />
+                                      <circle cx={lonToX(end[0])} cy={latToY(end[1])} r={3} fill="#ef4444" />
+                                    </svg>
+                                  );
+                                })()
+                              ) : (
+                                <p className="text-slate-500">No GPS track</p>
+                              )}
+                            </div>
+
+                            {/* Right: Tabs */}
+                            <div className="text-xs">
+                              <div className="mb-2 inline-flex rounded-full bg-slate-900/60 p-1 border border-slate-700/80">
+                                {["splits","hr"].map((t) => (
+                                  <button key={t}
+                                    onClick={() => setDetailsTab(t as any)}
+                                    className={`px-2.5 py-0.5 text-[11px] rounded-full transition ${detailsTab===t?"bg-sky-500 text-slate-900 font-semibold":"bg-transparent text-slate-300 hover:bg-slate-700/60"}`}
+                                  >
+                                    {t === "splits" ? "Splits" : "Heart rate"}
+                                  </button>
+                                ))}
+                              </div>
+
+                              {detailsTab === "hr" ? (
+                              detailsMetrics?.hr_zones ? (
                                 (() => {
                                   const z = detailsMetrics!.hr_zones!;
                                   const vals = [z.z1, z.z2, z.z3, z.z4, z.z5];
@@ -999,11 +1049,9 @@ function App() {
                                 })()
                               ) : (
                                 <p className="text-slate-500">No HR data</p>
-                              )}
-                            </div>
-
-                            {/* Splits */}
-                            <div className="text-xs">
+                              )
+                              ) : (
+                              <>
                               <h4 className="text-slate-200 font-semibold mb-2">Splits (mi)</h4>
                               {detailsSplits && detailsSplits.length > 0 ? (
                                 <div className="overflow-x-auto">
@@ -1037,6 +1085,8 @@ function App() {
                                 </div>
                               ) : (
                                 <p className="text-slate-500">No splits available</p>
+                              )}
+                              </>
                               )}
                             </div>
                           </div>
