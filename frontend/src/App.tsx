@@ -474,6 +474,7 @@ function App() {
 
         {/* WEEKLY RUN LOG */}
         <section className="bg-slate-800/80 border border-slate-700 rounded-2xl shadow-lg shadow-black/40 p-4">
+
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
             <div>
               <h2 className="font-semibold text-slate-100">
@@ -497,40 +498,34 @@ function App() {
               >
                 {showAddForm ? "Cancel" : "Add run"}
               </button>
-              <div className="hidden md:flex items-center gap-1 text-xs">
-                <span className="text-slate-400 mr-1">Filter:</span>
-                {([
-                  { key: "all", label: "All" },
-                  { key: "easy", label: "Easy" },
-                  { key: "workout", label: "Workout" },
-                  { key: "long", label: "Long" },
-                  { key: "race", label: "Race" },
-                ] as const).map((f) => (
-                  <button
-                    key={f.key}
-                    onClick={() => setTypeFilter(f.key)}
-                    className={`px-2 py-1 rounded-full border text-xs transition ${
-                      typeFilter === f.key
-                        ? "border-sky-500 text-sky-300 bg-sky-500/10"
-                        : "border-slate-600 text-slate-300 hover:bg-slate-700/60"
-                    }`}
-                  >
-                    {f.label}
-                  </button>
-                ))}
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-400">Filter:</span>
+                <select
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value as any)}
+                  className="rounded-full bg-slate-900/60 border border-slate-600 px-3 py-1 text-xs text-slate-100 hover:bg-slate-800/60"
+                >
+                  <option value="all">All</option>
+                  <option value="easy">Easy</option>
+                  <option value="workout">Workout</option>
+                  <option value="long">Long</option>
+                  <option value="race">Race</option>
+                </select>
               </div>
               <button
                 onClick={handlePrevWeek}
                 className="px-3 py-1.5 rounded-full border border-slate-600 text-sm text-slate-200 hover:bg-slate-700/80 transition"
+                title="Previous week"
               >
-                ← Previous
+                ←
               </button>
               <button
                 onClick={handleNextWeek}
                 className="px-3 py-1.5 rounded-full border border-sky-500/60 bg-sky-500/20 text-sm text-sky-200 hover:bg-sky-500/30 shadow shadow-sky-500/40 transition disabled:opacity-40"
                 disabled={weekOffset === 0}
+                title="Next week"
               >
-                Next →
+                →
               </button>
             </div>
           </div>
@@ -662,43 +657,53 @@ function App() {
                 {runs.map((run) => (
                   <article
                     key={run.id}
-                    className="rounded-xl border border-slate-700 bg-slate-900/40 p-3 shadow-md shadow-black/40 hover:border-sky-500/60 hover:shadow-sky-500/30 transition cursor-pointer"
+                    className="relative rounded-xl border border-slate-700 bg-slate-900/40 p-3 shadow-md shadow-black/40 hover:border-sky-500/60 hover:shadow-sky-500/30 transition cursor-pointer"
                   >
-                    {/* Top row: date + title */}
-                    <div className="flex items-baseline justify-between gap-3">
-                      <div>
-                        <p className="text-xs text-slate-400">{run.date}</p>
-                        <h3 className="text-sm font-semibold text-slate-100">
-                          {run.title}
-                        </h3>
+                    {/* Top-right action icons when not editing */}
+                    {editingId !== run.id && (
+                      <div className="absolute top-3 right-3 flex gap-2">
+                        <button
+                          aria-label="Edit run"
+                          onClick={() => startEditing(run)}
+                          className="w-8 h-8 flex items-center justify-center rounded-full border border-slate-600 text-slate-200 hover:bg-slate-700/80 transition"
+                          title="Edit"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={1.5}
+                            stroke="currentColor"
+                            className="w-4 h-4"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 3.487a2.25 2.25 0 1 1 3.182 3.182L7.125 19.587 3 21l1.413-4.125L16.862 3.487z" />
+                          </svg>
+                        </button>
+                        <button
+                          aria-label="Delete run"
+                          onClick={() => handleDelete(run.id)}
+                          className="w-8 h-8 flex items-center justify-center rounded-full border border-rose-500/60 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20 transition"
+                          title="Delete"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={1.5}
+                            stroke="currentColor"
+                            className="w-4 h-4"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12m-9 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m-1 0v12a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V7h10z" />
+                          </svg>
+                        </button>
                       </div>
-                      <div className="text-right text-xs text-slate-400 flex items-center gap-2">
-                        <div className="text-sky-300 font-semibold whitespace-nowrap">
-                          {run.distance_mi.toFixed(2)} mi
-                        </div>
-                        <div className="whitespace-nowrap">
-                          {run.duration} • {run.pace}
-                        </div>
-                        {editingId !== run.id && (
-                          <>
-                            <button
-                              onClick={() => startEditing(run)}
-                              className="px-2 py-1 rounded-full border border-slate-600 text-[11px] text-slate-200 hover:bg-slate-700/80 transition"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDelete(run.id)}
-                              className="px-2 py-1 rounded-full border border-red-500/60 bg-red-500/10 text-[11px] text-red-200 hover:bg-red-500/20 transition"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
+                    )}
 
-                    <div className="mt-1 text-[10px] text-slate-400">
+                    {/* Title row with type pill next to title */}
+                    <div className="flex items-center gap-2 pr-12">
+                      <h3 className="text-base md:text-lg font-semibold text-slate-100">
+                        {run.title}
+                      </h3>
                       {(() => {
                         const type = run.run_type;
                         const color =
@@ -710,13 +715,28 @@ function App() {
                             ? "border-sky-500/60 bg-sky-500/10 text-sky-200"
                             : "border-rose-500/60 bg-rose-500/10 text-rose-200";
                         return (
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded-full border ${color}`}
-                          >
+                          <span className={`text-[10px] inline-block px-2 py-0.5 rounded-full border ${color}`}>
                             {type}
                           </span>
                         );
                       })()}
+                    </div>
+
+                    {/* Date under title */}
+                    <p className="mt-1 text-xs text-slate-400">{run.date}</p>
+
+                    {/* Prominent stats row */}
+                    <div className="mt-2 flex items-baseline gap-4">
+                      <div className="text-sky-300 font-semibold text-base md:text-lg whitespace-nowrap">
+                        {run.distance_mi.toFixed(2)} mi
+                      </div>
+                      <div className="text-slate-200 font-semibold text-base md:text-lg whitespace-nowrap">
+                        {run.duration}
+                      </div>
+                      <div className="text-slate-300 font-semibold text-base md:text-lg whitespace-nowrap">
+                        {run.pace}
+                      </div>
+                      {editingId !== run.id && <div className="ml-auto" />}
                     </div>
 
                     {/* Notes */}
