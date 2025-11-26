@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { getWeeklyMileage, getRunsInRange, createRun, updateRun, deleteRun, getWeeklyGoal, upsertWeeklyGoal, importRun, getRunMetrics, getRunSeries, getRunSplits, getRunTrack } from "./api";
+import RunMap from "./components/RunMap";
 import type { WeeklyMileagePoint, Run, RunCreate, WeeklyGoal, RunMetrics, RunSeries, RunSplit, RunTrack } from "./api";
 import {
   ComposedChart,
@@ -955,31 +956,7 @@ function App() {
                             {/* Left: Map */}
                             <div className="text-xs">
                               <h4 className="text-slate-200 font-semibold mb-2">Route</h4>
-                              {detailsTrack?.geojson && detailsTrack?.bounds ? (
-                                (() => {
-                                  const coords = detailsTrack!.geojson!.coordinates;
-                                  const b = detailsTrack!.bounds!;
-                                  const W = 360, H = 240, pad = 12;
-                                  const lonToX = (lon: number) => pad + ((lon - b.minLon) / (b.maxLon - b.minLon || 1)) * (W - pad * 2);
-                                  const latToY = (lat: number) => pad + ((b.maxLat - lat) / (b.maxLat - b.minLat || 1)) * (H - pad * 2);
-                                  const path = coords.map(([lon, lat], i) => `${i ? "L" : "M"}${lonToX(lon)},${latToY(lat)}`).join(" ");
-                                  const start = coords[0];
-                                  const end = coords[coords.length - 1];
-                                  return (
-                                    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="rounded-lg bg-slate-900/40 border border-slate-700">
-                                      {/* frame */}
-                                      <rect x={0.5} y={0.5} width={W-1} height={H-1} rx={8} ry={8} fill="transparent" stroke="#0f172a"/>
-                                      {/* path */}
-                                      <path d={path} fill="none" stroke="#38bdf8" strokeWidth={2} />
-                                      {/* start/end */}
-                                      <circle cx={lonToX(start[0])} cy={latToY(start[1])} r={3} fill="#22c55e" />
-                                      <circle cx={lonToX(end[0])} cy={latToY(end[1])} r={3} fill="#ef4444" />
-                                    </svg>
-                                  );
-                                })()
-                              ) : (
-                                <p className="text-slate-500">No GPS track</p>
-                              )}
+                              {detailsTrack ? <RunMap track={detailsTrack} /> : <p className="text-slate-500">No GPS track</p>}
                             </div>
 
                             {/* Right: Tabs */}
