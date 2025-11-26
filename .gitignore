@@ -1,0 +1,36 @@
+# --- macOS ---
+.DS_Store
+
+# --- Python / FastAPI backend ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.log
+
+# Virtualenvs
+.env
+.env.*
+venv/
+.venv/
+
+# Test / tooling
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Alembic cache
+backend/alembic/__pycache__/
+
+# --- Node / React frontend ---
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.turbo/
+
+# Editors / misc
+.vscode/
+.idea/
+*.swp
