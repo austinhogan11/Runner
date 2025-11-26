@@ -43,11 +43,15 @@ export async function getWeeklyMileage(
 
 export async function getRunsInRange(
   start: string,
-  end: string
+  end: string,
+  opts?: { run_type?: string }
 ): Promise<Run[]> {
   const url = new URL(`${API_URL}/runs/`);
   url.searchParams.set("start_date", start);
   url.searchParams.set("end_date", end);
+  if (opts?.run_type && opts.run_type !== "all") {
+    url.searchParams.set("run_type", opts.run_type);
+  }
 
   const res = await fetch(url);
   if (!res.ok) {

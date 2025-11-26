@@ -101,6 +101,7 @@ function App() {
   const [mileageError, setMileageError] = useState<string | null>(null);
   const [range, setRange] = useState<MileageRange>("12w");
   const [runs, setRuns] = useState<Run[]>([]);
+  const [typeFilter, setTypeFilter] = useState<"all" | "easy" | "workout" | "long" | "race">("all");
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [runsError, setRunsError] = useState<string | null>(null);
   const [isSavingRun, setIsSavingRun] = useState(false);
@@ -223,7 +224,7 @@ function App() {
       setRunsError(null);
 
       const { start, end } = getWeekRange(weekOffset);
-      const data = await getRunsInRange(start, end);
+      const data = await getRunsInRange(start, end, { run_type: typeFilter });
       setRuns(data);
     } catch (err) {
       console.error(err);
@@ -231,7 +232,7 @@ function App() {
     } finally {
       setIsLoadingRuns(false);
     }
-  }, [weekOffset]);
+  }, [weekOffset, typeFilter]);
 
   const loadMileage = useCallback(async () => {
     try {
@@ -496,6 +497,28 @@ function App() {
               >
                 {showAddForm ? "Cancel" : "Add run"}
               </button>
+              <div className="hidden md:flex items-center gap-1 text-xs">
+                <span className="text-slate-400 mr-1">Filter:</span>
+                {([
+                  { key: "all", label: "All" },
+                  { key: "easy", label: "Easy" },
+                  { key: "workout", label: "Workout" },
+                  { key: "long", label: "Long" },
+                  { key: "race", label: "Race" },
+                ] as const).map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() => setTypeFilter(f.key)}
+                    className={`px-2 py-1 rounded-full border text-xs transition ${
+                      typeFilter === f.key
+                        ? "border-sky-500 text-sky-300 bg-sky-500/10"
+                        : "border-slate-600 text-slate-300 hover:bg-slate-700/60"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
               <button
                 onClick={handlePrevWeek}
                 className="px-3 py-1.5 rounded-full border border-slate-600 text-sm text-slate-200 hover:bg-slate-700/80 transition"
@@ -676,9 +699,24 @@ function App() {
                     </div>
 
                     <div className="mt-1 text-[10px] text-slate-400">
-                      <span className="inline-block px-2 py-0.5 rounded-full border border-slate-600 bg-slate-800/60">
-                        {run.run_type}
-                      </span>
+                      {(() => {
+                        const type = run.run_type;
+                        const color =
+                          type === "easy"
+                            ? "border-emerald-500/60 bg-emerald-500/10 text-emerald-200"
+                            : type === "workout"
+                            ? "border-amber-500/60 bg-amber-500/10 text-amber-200"
+                            : type === "long"
+                            ? "border-sky-500/60 bg-sky-500/10 text-sky-200"
+                            : "border-rose-500/60 bg-rose-500/10 text-rose-200";
+                        return (
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-full border ${color}`}
+                          >
+                            {type}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {/* Notes */}
