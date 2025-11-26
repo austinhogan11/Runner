@@ -12,6 +12,30 @@ export interface WeeklyGoal {
   notes?: string | null;
 }
 
+export interface RunMetrics {
+  avg_hr: number | null;
+  max_hr: number | null;
+  elev_gain_ft: number | null;
+  elev_loss_ft: number | null;
+  moving_time_sec: number | null;
+  device?: string | null;
+  hr_zones?: { z1: number; z2: number; z3: number; z4: number; z5: number; hr_max: number } | null;
+}
+
+export interface RunSeries {
+  hr_series: { t: number; hr: number }[];
+  pace_series: { t: number; pace_s_per_mi: number }[];
+}
+
+export interface RunSplit {
+  idx: number;
+  distance_mi: number;
+  duration_sec: number;
+  avg_hr?: number | null;
+  max_hr?: number | null;
+  elev_gain_ft?: number | null;
+}
+
 export interface Run {
   id: number;
   date: string;
@@ -21,6 +45,7 @@ export interface Run {
   distance_mi: number;
   duration: string;
   run_type: string;
+  source?: string | null;
   pace: string;
 }
 
@@ -122,5 +147,23 @@ export async function importRun(file: File): Promise<Run> {
   form.append("file", file);
   const res = await fetch(`${API_URL}/runs/import`, { method: "POST", body: form });
   if (!res.ok) throw new Error("Failed to import GPX");
+  return res.json();
+}
+
+export async function getRunMetrics(id: number): Promise<RunMetrics> {
+  const res = await fetch(`${API_URL}/runs/${id}/metrics`);
+  if (!res.ok) throw new Error("Failed to fetch run metrics");
+  return res.json();
+}
+
+export async function getRunSeries(id: number): Promise<RunSeries> {
+  const res = await fetch(`${API_URL}/runs/${id}/series`);
+  if (!res.ok) throw new Error("Failed to fetch run series");
+  return res.json();
+}
+
+export async function getRunSplits(id: number): Promise<RunSplit[]> {
+  const res = await fetch(`${API_URL}/runs/${id}/splits`);
+  if (!res.ok) throw new Error("Failed to fetch splits");
   return res.json();
 }

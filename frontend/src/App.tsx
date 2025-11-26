@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { getWeeklyMileage, getRunsInRange, createRun, updateRun, deleteRun, getWeeklyGoal, upsertWeeklyGoal, importRun } from "./api";
-import type { WeeklyMileagePoint, Run, RunCreate, WeeklyGoal } from "./api";
+import { getWeeklyMileage, getRunsInRange, createRun, updateRun, deleteRun, getWeeklyGoal, upsertWeeklyGoal, importRun, getRunMetrics, getRunSeries, getRunSplits } from "./api";
+import type { WeeklyMileagePoint, Run, RunCreate, WeeklyGoal, RunMetrics, RunSeries, RunSplit } from "./api";
 import {
   ComposedChart,
   Line,
@@ -39,6 +39,12 @@ function to12h(hhmm?: string | null): string | null {
   const ampm = h >= 12 ? "PM" : "AM";
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}:${mStr} ${ampm}`;
+}
+
+function fmtPaceSec(totalSec: number): string {
+  const m = Math.floor(totalSec / 60);
+  const s = Math.floor(totalSec % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 // Return an ISO week window that always runs Monday (start) through Sunday (end).
@@ -134,6 +140,12 @@ function App() {
   });
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editData, setEditData] = useState<Partial<Run>>({});
+  const [detailsId, setDetailsId] = useState<number | null>(null);
+  const [detailsMetrics, setDetailsMetrics] = useState<RunMetrics | null>(null);
+  const [detailsSeries, setDetailsSeries] = useState<RunSeries | null>(null);
+  const [detailsSplits, setDetailsSplits] = useState<RunSplit[] | null>(null);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  const [hrHoverIdx, setHrHoverIdx] = useState<number | null>(null);
 
   const chartData = useMemo(
     () => sliceMileageForRange(mileage, range),
@@ -234,6 +246,27 @@ function App() {
     if (editingId === id) cancelEditing();
     await loadRunsForWeek();
     await loadMileage();
+  };
+
+  const toggleDetails = async (run: Run) => {
+    if (detailsId === run.id) {
+      setDetailsId(null);
+      setDetailsMetrics(null);
+      setDetailsSeries(null);
+      return;
+    }
+    try {
+      setIsLoadingDetails(true);
+      setDetailsId(run.id);
+      const [m, s, sp] = await Promise.all([getRunMetrics(run.id), getRunSeries(run.id), getRunSplits(run.id)]);
+      setDetailsMetrics(m);
+      setDetailsSeries(s);
+      setDetailsSplits(sp);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoadingDetails(false);
+    }
   };
 
   const loadRunsForWeek = useCallback(async () => {
@@ -858,6 +891,11 @@ function App() {
                           </span>
                         );
                       })()}
+                      {run.source && (
+                        <span className="text-[10px] inline-block px-2 py-0.5 rounded-full border border-slate-600 bg-slate-800/40 text-slate-300">
+                          {run.source}
+                        </span>
+                      )}
                     </div>
 
                     {/* Date + time under title */}
@@ -887,11 +925,124 @@ function App() {
                       </p>
                     )}
 
-                    {/* Future: heart rate, elevation, GPS, etc. */}
-                    <div className="mt-2 text-[10px] uppercase tracking-wide text-slate-600">
-                      Click to view details (HR, pace, elevation, GPS) — coming
-                      soon
+                    <div className="mt-2 flex items-center justify-between">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-600">
+                        Click details for HR, splits
+                      </div>
+                      <button
+                        onClick={() => toggleDetails(run)}
+                        className="px-2 py-1 rounded-full border border-slate-600 text-[11px] text-slate-200 hover:bg-slate-700/80 transition"
+                      >
+                        {detailsId === run.id ? "Hide details" : "Details"}
+                      </button>
                     </div>
+
+                    {detailsId === run.id && (
+                      <div className="mt-3 border-t border-slate-700 pt-3">
+                        {isLoadingDetails ? (
+                          <p className="text-xs text-slate-400">Loading...</p>
+                        ) : (
+                          <div className="grid gap-4 md:grid-cols-2">
+                            {/* HR Zones */}
+                            <div className="text-xs">
+                              <h4 className="text-slate-200 font-semibold mb-2">Heart rate</h4>
+                              {detailsMetrics?.hr_zones ? (
+                                (() => {
+                                  const z = detailsMetrics!.hr_zones!;
+                                  const vals = [z.z1, z.z2, z.z3, z.z4, z.z5];
+                                  const total = vals.reduce((a,b)=>a+b,0) || 1;
+                                  const colors = ["#34d399","#22c55e","#f59e0b","#f97316","#f43f5e"]; // Z1..Z5
+                                  const W = 220, H = 220, CX = 110, CY = 110, R = 78; const C = 2*Math.PI*R;
+                                  let offset = 0;
+                                  const hoverIdx = hrHoverIdx;
+                                  const segs = vals.map((v,i)=>{
+                                    const frac = v/total; const dash = C*frac; const emph = hoverIdx === i;
+                                    const midAngle = (offset + dash/2)/C * 2*Math.PI - Math.PI/2; // start at top
+                                    const lx = CX + (R-18)*Math.cos(midAngle);
+                                    const ly = CY + (R-18)*Math.sin(midAngle);
+                                    const label = `Z${i+1}`;
+                                    const seg = (
+                                      <g key={i}
+                                        onMouseEnter={() => setHrHoverIdx(i)}
+                                        onMouseLeave={() => setHrHoverIdx(null)}
+                                      >
+                                        <circle r={R} cx={CX} cy={CY} fill="transparent" stroke={colors[i]}
+                                          strokeWidth={emph ? 16 : 14}
+                                          strokeDasharray={`${dash} ${C-dash}`}
+                                          strokeDashoffset={-offset}
+                                          strokeLinecap="round"
+                                          opacity={hoverIdx === null || emph ? 1 : 0.35}
+                                          style={{ transition: "all 120ms ease" }}
+                                        />
+                                        {frac > 0.06 && (
+                                          <text x={lx} y={ly} fill="#cbd5e1" fontSize={11} textAnchor="middle" dominantBaseline="middle">
+                                            {label}
+                                          </text>
+                                        )}
+                                      </g>
+                                    );
+                                    offset += dash; return seg;
+                                  });
+                                  const centerLabel = hoverIdx != null ? `Z${hoverIdx+1}` : "max";
+                                  const centerValue = hoverIdx != null ? `${Math.round(vals[hoverIdx]/60)}m` : `${z.hr_max}`;
+                                  return (
+                                    <div className="flex items-center gap-4">
+                                      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+                                        <circle r={R} cx={CX} cy={CY} fill="transparent" stroke="#0f172a" strokeWidth={14} />
+                                        {segs}
+                                        <circle r={54} cx={CX} cy={CY} fill="#0b1220" />
+                                        <text x={CX} y={CY-8} fill="#cbd5e1" fontSize={12} textAnchor="middle">{centerLabel}</text>
+                                        <text x={CX} y={CY+14} fill="#e2e8f0" fontSize={18} textAnchor="middle" fontWeight="600">{centerValue}</text>
+                                      </svg>
+                                    </div>
+                                  );
+                                })()
+                              ) : (
+                                <p className="text-slate-500">No HR data</p>
+                              )}
+                            </div>
+
+                            {/* Splits */}
+                            <div className="text-xs">
+                              <h4 className="text-slate-200 font-semibold mb-2">Splits (mi)</h4>
+                              {detailsSplits && detailsSplits.length > 0 ? (
+                                <div className="overflow-x-auto">
+                                  <table className="min-w-full text-left text-[11px]">
+                                    <thead className="text-slate-400">
+                                      <tr>
+                                        <th className="py-1 pr-3">#</th>
+                                        <th className="py-1 pr-3">Distance</th>
+                                        <th className="py-1 pr-3">Time</th>
+                                        <th className="py-1 pr-3">Pace</th>
+                                        <th className="py-1 pr-3">Elev (+ft)</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {detailsSplits.map((sp) => {
+                                        const time = fmtPaceSec(sp.duration_sec);
+                                        const pace = sp.distance_mi > 0 ? fmtPaceSec(sp.duration_sec / sp.distance_mi) : "-";
+                                        const elev = sp.elev_gain_ft != null ? sp.elev_gain_ft.toFixed(0) : "-";
+                                        return (
+                                          <tr key={sp.idx} className="border-t border-slate-700">
+                                            <td className="py-1 pr-3 text-slate-300">{sp.idx}</td>
+                                            <td className="py-1 pr-3 text-slate-300">{sp.distance_mi.toFixed(2)}</td>
+                                            <td className="py-1 pr-3 text-slate-300">{time}</td>
+                                            <td className="py-1 pr-3 text-slate-300">{pace}/mi</td>
+                                            <td className="py-1 pr-3 text-slate-300">{elev}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ) : (
+                                <p className="text-slate-500">No splits available</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {editingId === run.id ? (
                       <div className="mt-3 border-t border-slate-700 pt-3">
                         <div className="grid gap-3 md:grid-cols-5">
