@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { getWeeklyMileage, getRunsInRange, createRun, updateRun, deleteRun } from "./api";
-import type { WeeklyMileagePoint, Run, RunCreate } from "./api";
+import { getWeeklyMileage, getRunsInRange, createRun, updateRun, deleteRun, getWeeklyGoal, upsertWeeklyGoal, importRun } from "./api";
+import type { WeeklyMileagePoint, Run, RunCreate, WeeklyGoal } from "./api";
 import {
   ComposedChart,
   Line,
@@ -29,6 +29,16 @@ function fromISODateLocal(iso: string): Date {
   const d = new Date(year, month - 1, day);
   d.setHours(0, 0, 0, 0);
   return d;
+}
+
+function to12h(hhmm?: string | null): string | null {
+  if (!hhmm) return null;
+  const [hStr, mStr] = hhmm.split(":");
+  const h = Number(hStr);
+  if (Number.isNaN(h)) return hhmm;
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${mStr} ${ampm}`;
 }
 
 // Return an ISO week window that always runs Monday (start) through Sunday (end).
@@ -102,6 +112,11 @@ function App() {
   const [range, setRange] = useState<MileageRange>("12w");
   const [runs, setRuns] = useState<Run[]>([]);
   const [typeFilter, setTypeFilter] = useState<"all" | "easy" | "workout" | "long" | "race">("all");
+  const [weekGoal, setWeekGoal] = useState<WeeklyGoal | null>(null);
+  const [isGoalLoading, setIsGoalLoading] = useState(false);
+  const [goalError, setGoalError] = useState<string | null>(null);
+  const [editingGoal, setEditingGoal] = useState(false);
+  const [goalInput, setGoalInput] = useState<string>("");
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
   const [runsError, setRunsError] = useState<string | null>(null);
   const [isSavingRun, setIsSavingRun] = useState(false);
@@ -109,6 +124,7 @@ function App() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newRun, setNewRun] = useState<RunCreate>({
     date: toISODate(new Date()),
+    start_time: "07:00",
     title: "",
     notes: "",
     distance_mi: 0,
@@ -180,6 +196,7 @@ function App() {
       duration: run.duration,
       run_type: run.run_type,
       date: run.date,
+      start_time: run.start_time ?? "",
     });
   };
 
@@ -204,6 +221,7 @@ function App() {
       duration: editData.duration,
       run_type: editData.run_type,
       date: editData.date,
+      start_time: editData.start_time,
     };
     await updateRun(id, payload);
     cancelEditing();
@@ -264,6 +282,7 @@ function App() {
       setShowAddForm(false);
       await loadRunsForWeek();
       await loadMileage();
+      await loadWeekGoal();
     } catch (err) {
       console.error(err);
       setSaveError("Failed to save run. Please try again.");
@@ -280,6 +299,26 @@ function App() {
     loadRunsForWeek();
   }, [loadRunsForWeek]);
 
+  const loadWeekGoal = useCallback(async () => {
+    try {
+      setIsGoalLoading(true);
+      setGoalError(null);
+      const { start } = getWeekRange(weekOffset);
+      const goal = await getWeeklyGoal(start);
+      setWeekGoal(goal);
+      setGoalInput(goal ? String(goal.goal_miles) : "");
+    } catch (e) {
+      console.error(e);
+      setGoalError("Failed to load weekly goal");
+    } finally {
+      setIsGoalLoading(false);
+    }
+  }, [weekOffset]);
+
+  useEffect(() => {
+    loadWeekGoal();
+  }, [loadWeekGoal]);
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       {/* HEADER */}
@@ -289,9 +328,6 @@ function App() {
             Runner Dashboard
           </span>
         </h1>
-        <p className="text-slate-400 mt-4">
-          12-week mileage &amp; weekly training log
-        </p>
       </header>
 
       <main className="max-w-5xl mx-auto px-4 pb-12 space-y-8">
@@ -477,18 +513,87 @@ function App() {
 
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
             <div>
-              <h2 className="font-semibold text-slate-100">
+              <h2 className="font-semibold text-slate-100 text-lg md:text-xl">
                 This week&apos;s runs
               </h2>
-              <p className="text-xs text-slate-500">
-                {weekStart} → {weekEnd} • Total:{" "}
-                <span className="text-sky-300">
-                  {weeklyDistance.toFixed(2)} mi
+              <p className="text-sm md:text-base text-slate-300 flex items-center gap-3 flex-wrap">
+                <span>
+                  <span className="font-medium text-slate-200">{weekStart}</span>
+                  <span className="mx-1">→</span>
+                  <span className="font-medium text-slate-200">{weekEnd}</span>
+                </span>
+                <span>
+                  Total:
+                  <span className="ml-1 text-sky-300 font-semibold">
+                    {weeklyDistance.toFixed(2)} mi
+                  </span>
+                </span>
+                <span className="flex items-center gap-2">
+                  Goal:
+                  {!editingGoal ? (
+                    <>
+                      <span className="ml-1 text-emerald-300 font-semibold">
+                        {weekGoal ? weekGoal.goal_miles.toFixed(1) : "—"} mi
+                      </span>
+                      <button
+                        className="px-2 py-0.5 rounded-full border border-slate-600 text-[11px] text-slate-200 hover:bg-slate-700/80 transition"
+                        onClick={() => setEditingGoal(true)}
+                        title="Edit goal"
+                      >
+                        ✎
+                      </button>
+                    </>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={goalInput}
+                        onChange={(e) => setGoalInput(e.target.value)}
+                        className="w-24 rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                      />
+                      <button
+                        className="px-2 py-0.5 rounded-full border border-sky-500/60 bg-sky-500/10 text-[11px] text-sky-200 hover:bg-sky-500/20"
+                        onClick={async () => {
+                          const { start } = getWeekRange(weekOffset);
+                          const miles = parseFloat(goalInput || '0');
+                          await upsertWeeklyGoal(start, { goal_miles: miles });
+                          setEditingGoal(false);
+                          await loadWeekGoal();
+                        }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        className="px-2 py-0.5 rounded-full border border-slate-600 text-[11px] text-slate-200 hover:bg-slate-700/80"
+                        onClick={() => {
+                          setEditingGoal(false);
+                          setGoalInput(weekGoal ? String(weekGoal.goal_miles) : "");
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  )}
                 </span>
               </p>
-              <p className="text-[10px] text-slate-600">
-                Week offset: {weekOffset} (0 = current week)
-              </p>
+              {weekGoal && weekGoal.goal_miles > 0 && (() => {
+                const pct = (weeklyDistance / weekGoal.goal_miles) * 100;
+                const bar = Math.max(0, Math.min(100, pct));
+                return (
+                  <div className="mt-2 flex items-center gap-2">
+                    <div className="h-2 w-full max-w-sm rounded-full bg-slate-800 border border-slate-700">
+                      <div
+                        className="h-full rounded-full bg-emerald-500"
+                        style={{ width: `${bar.toFixed(0)}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-slate-300 font-semibold min-w-[3ch] text-right">
+                      {pct.toFixed(0)}%
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="flex items-center gap-3">
@@ -498,6 +603,30 @@ function App() {
               >
                 {showAddForm ? "Cancel" : "Add run"}
               </button>
+              {/* Import GPX to create a run */}
+              <label className="px-3 py-1.5 rounded-full border border-slate-600 text-sm text-slate-200 hover:bg-slate-700/80 transition cursor-pointer">
+                Import GPX/FIT
+                <input
+                  type="file"
+                  accept=".gpx,.fit"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const input = e.currentTarget as HTMLInputElement;
+                    const f = input.files?.[0];
+                    if (!f) return;
+                    try {
+                      await importRun(f);
+                      await loadRunsForWeek();
+                      await loadMileage();
+                      await loadWeekGoal();
+                    } catch (err) {
+                      console.error(err);
+                    } finally {
+                      if (input) input.value = '';
+                    }
+                  }}
+                />
+              </label>
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-slate-400">Filter:</span>
                 <select
@@ -547,6 +676,15 @@ function App() {
                     onChange={(e) =>
                       handleNewRunChange("date", e.target.value)
                     }
+                    className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                  />
+                </label>
+                <label className="flex flex-col text-xs text-slate-300 gap-1">
+                  Start time
+                  <input
+                    type="time"
+                    value={newRun.start_time ?? ""}
+                    onChange={(e) => handleNewRunChange("start_time", e.target.value)}
                     className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
                   />
                 </label>
@@ -722,8 +860,11 @@ function App() {
                       })()}
                     </div>
 
-                    {/* Date under title */}
-                    <p className="mt-1 text-xs text-slate-400">{run.date}</p>
+                    {/* Date + time under title */}
+                    <p className="mt-1 text-xs text-slate-400">
+                      {run.date}
+                      {to12h(run.start_time) ? <span> · {to12h(run.start_time)}</span> : null}
+                    </p>
 
                     {/* Prominent stats row */}
                     <div className="mt-2 flex items-baseline gap-4">
@@ -753,13 +894,22 @@ function App() {
                     </div>
                     {editingId === run.id ? (
                       <div className="mt-3 border-t border-slate-700 pt-3">
-                        <div className="grid gap-3 md:grid-cols-4">
+                        <div className="grid gap-3 md:grid-cols-5">
                           <label className="flex flex-col text-xs text-slate-300 gap-1">
                             Title
                             <input
                               type="text"
                               value={(editData.title as string) ?? ""}
                               onChange={(e) => handleEditChange("title", e.target.value)}
+                              className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
+                            />
+                          </label>
+                          <label className="flex flex-col text-xs text-slate-300 gap-1">
+                            Start time
+                            <input
+                              type="time"
+                              value={(editData.start_time as string) ?? ""}
+                              onChange={(e) => handleEditChange("start_time", e.target.value)}
                               className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
                             />
                           </label>

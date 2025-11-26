@@ -6,9 +6,16 @@ export interface WeeklyMileagePoint {
   total_mileage: number;
 }
 
+export interface WeeklyGoal {
+  week_start: string;
+  goal_miles: number;
+  notes?: string | null;
+}
+
 export interface Run {
   id: number;
   date: string;
+  start_time?: string | null;
   title: string;
   notes: string | null;
   distance_mi: number;
@@ -19,6 +26,7 @@ export interface Run {
 
 export interface RunCreate {
   date: string;
+  start_time?: string | null;
   title: string;
   notes: string;
   distance_mi: number;
@@ -76,6 +84,24 @@ export async function createRun(payload: RunCreate): Promise<Run> {
   return res.json();
 }
 
+// ------- Goals API ------- //
+export async function getWeeklyGoal(weekStart: string): Promise<WeeklyGoal | null> {
+  const res = await fetch(`${API_URL}/goals/${weekStart}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Failed to fetch weekly goal");
+  return res.json();
+}
+
+export async function upsertWeeklyGoal(weekStart: string, data: { goal_miles: number; notes?: string }): Promise<WeeklyGoal> {
+  const res = await fetch(`${API_URL}/goals/${weekStart}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to save weekly goal");
+  return res.json();
+}
+
 export async function updateRun(id: number, data: Partial<Run>): Promise<Run> {
   const res = await fetch(`${API_URL}/runs/${id}`, {
     method: "PUT",
@@ -89,4 +115,12 @@ export async function updateRun(id: number, data: Partial<Run>): Promise<Run> {
 export async function deleteRun(id: number): Promise<void> {
   const res = await fetch(`${API_URL}/runs/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete run");
+}
+
+export async function importRun(file: File): Promise<Run> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_URL}/runs/import`, { method: "POST", body: form });
+  if (!res.ok) throw new Error("Failed to import GPX");
+  return res.json();
 }
