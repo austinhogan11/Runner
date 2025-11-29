@@ -21,7 +21,6 @@ from app.core.time_utils import (
 from app.core.config import settings
 import os
 import math
-import json
 import gpxpy
 import gpxpy.gpx
 from fitparse import FitFile
@@ -225,6 +224,11 @@ def get_run_stats(
 # --------- File Upload + Processing (GPX) --------- #
 
 def _haversine(lat1, lon1, lat2, lon2):
+    """Return great‑circle distance in meters between two WGS84 points.
+
+    Uses the standard haversine formula; sufficient for per‑point distances
+    over a typical GPS activity track.
+    """
     R = 6371000.0
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -235,6 +239,12 @@ def _haversine(lat1, lon1, lat2, lon2):
 
 
 def _process_gpx_file(db: Session, run_id: int, path: str):
+    """Parse a GPX file and persist derived data for a run.
+
+    - Track: GeoJSON LineString + bounds + point count
+    - Splits: per‑mile using moving time only (speed >= MOVING_SPEED_MPS)
+    - Metrics: elevation gain/loss (ft) and moving time
+    """
     with open(path, "r", encoding="utf-8") as f:
         gpx = gpxpy.parse(f)
 
@@ -459,6 +469,12 @@ def _fit_basic_stats(path: str):
 
 
 def _process_fit_file(db: Session, run_id: int, path: str):
+    """Parse a FIT file and persist derived data.
+
+    - Prefer device "lap" messages for mile splits (timer time, excludes pauses)
+    - Fall back to moving‑time per‑mile splits when no laps are available
+    - Store HR/pace downsampled series and HR zones summary
+    """
     ff = FitFile(path)
     points = []
     total_m = 0.0

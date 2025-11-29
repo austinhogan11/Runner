@@ -30,6 +30,13 @@ frontend/dist/
 frontend/.vite/
 frontend/.turbo/
 
+# App uploads
+backend/uploads/
+
+# Local envs
+backend/.env
+frontend/.env
+
 # Editors / misc
 .vscode/
 .idea/
