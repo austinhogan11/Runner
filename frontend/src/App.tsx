@@ -128,8 +128,8 @@ function App() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [typeFilter, setTypeFilter] = useState<"all" | "easy" | "workout" | "long" | "race">("all");
   const [weekGoal, setWeekGoal] = useState<WeeklyGoal | null>(null);
-  const [isGoalLoading, setIsGoalLoading] = useState(false);
-  const [goalError, setGoalError] = useState<string | null>(null);
+  const [_isGoalLoading, setIsGoalLoading] = useState(false);
+  const [_goalError, setGoalError] = useState<string | null>(null);
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalInput, setGoalInput] = useState<string>("");
   const [isLoadingRuns, setIsLoadingRuns] = useState(false);
@@ -154,9 +154,10 @@ function App() {
   const [detailsSeries, setDetailsSeries] = useState<RunSeries | null>(null);
   const [detailsSplits, setDetailsSplits] = useState<RunSplit[] | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
-  const [hrHoverIdx, setHrHoverIdx] = useState<number | null>(null);
+  const [_hrHoverIdx, _setHrHoverIdx] = useState<number | null>(null);
   const [detailsTrack, setDetailsTrack] = useState<RunTrack | null>(null);
-  const [detailsTab, setDetailsTab] = useState<"splits" | "charts" | "hr">("splits");
+  type DetailsTab = "splits" | "pace" | "hr" | "zones";
+  const [detailsTab, setDetailsTab] = useState<DetailsTab>("splits");
   const [isReprocessing, setIsReprocessing] = useState(false);
 
   const chartData = useMemo(
