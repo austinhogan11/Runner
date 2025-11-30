@@ -25,6 +25,9 @@ export interface RunMetrics {
 export interface RunSeries {
   hr_series: { t: number; hr: number }[];
   pace_series: { t: number; pace_s_per_mi: number }[];
+  hr_dist_series?: { d: number; hr: number }[];
+  pace_dist_series?: { d: number; pace_s_per_mi: number }[];
+  elev_dist_series?: { d: number; elev_ft: number }[];
 }
 
 export interface RunSplit {
@@ -177,5 +180,11 @@ export async function getRunSplits(id: number): Promise<RunSplit[]> {
 export async function getRunTrack(id: number): Promise<RunTrack> {
   const res = await fetch(`${API_URL}/runs/${id}/track`);
   if (!res.ok) throw new Error("Failed to fetch track");
+  return res.json();
+}
+
+export async function reprocessRun(id: number): Promise<{ message: string } & Record<string, any>> {
+  const res = await fetch(`${API_URL}/runs/${id}/reprocess`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to reprocess run");
   return res.json();
 }

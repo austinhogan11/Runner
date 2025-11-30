@@ -17,6 +17,12 @@ Base URL: `http://127.0.0.1:8000`
   - file: `.fit` or `.gpx`
   - Creates a `Run` and triggers background processing
 
+### Reprocess
+
+- `POST /runs/{id}/reprocess`
+  - Rebuilds splits, metrics, series, and track from the stored file(s).
+  - Preference order: FIT > GPX. Returns `{ message, run_id, file, source }`.
+
 ### Details endpoints
 
 - `GET /runs/{id}/track` – GeoJSON + bounds + points_count
@@ -29,4 +35,3 @@ Base URL: `http://127.0.0.1:8000`
 - `GET /goals/weekly?start_date=&end_date=` – list goals for a range
 - `GET /goals/{week_start}` – single week goal (404 if not set)
 - `PUT /goals/{week_start}` – upsert `{ goal_miles, notes? }`
-

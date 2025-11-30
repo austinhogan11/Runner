@@ -18,3 +18,7 @@ class RunMetrics(Base):
     hr_zones = Column(JSONB, nullable=True)
     hr_series = Column(JSONB, nullable=True)   # [{t: seconds, hr: bpm}] (downsampled)
     pace_series = Column(JSONB, nullable=True) # [{t: seconds, pace_s_per_mi: number}]
+    # Distance-indexed series for charts (x = miles)
+    hr_dist_series = Column(JSONB, nullable=True)     # [{d: miles, hr: bpm}]
+    pace_dist_series = Column(JSONB, nullable=True)   # [{d: miles, pace_s_per_mi: number}]
+    elev_dist_series = Column(JSONB, nullable=True)   # [{d: miles, elev_ft: number}]

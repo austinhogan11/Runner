@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { getWeeklyMileage, getRunsInRange, createRun, updateRun, deleteRun, getWeeklyGoal, upsertWeeklyGoal, importRun, getRunMetrics, getRunSeries, getRunSplits, getRunTrack } from "./api";
+import { getWeeklyMileage, getRunsInRange, createRun, updateRun, deleteRun, getWeeklyGoal, upsertWeeklyGoal, importRun, getRunMetrics, getRunSeries, getRunSplits, getRunTrack, reprocessRun } from "./api";
 import RunMap from "./components/RunMap";
 import type { WeeklyMileagePoint, Run, RunCreate, WeeklyGoal, RunMetrics, RunSeries, RunSplit, RunTrack } from "./api";
 import {
@@ -46,6 +46,14 @@ function fmtPaceSec(totalSec: number): string {
   const m = Math.floor(totalSec / 60);
   const s = Math.floor(totalSec % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function fmtHHMMSS(totalSec: number): string {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = Math.floor(totalSec % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
 // Return an ISO week window that always runs Monday (start) through Sunday (end).
@@ -148,7 +156,8 @@ function App() {
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [hrHoverIdx, setHrHoverIdx] = useState<number | null>(null);
   const [detailsTrack, setDetailsTrack] = useState<RunTrack | null>(null);
-  const [detailsTab, setDetailsTab] = useState<"splits" | "hr">("splits");
+  const [detailsTab, setDetailsTab] = useState<"splits" | "charts" | "hr">("splits");
+  const [isReprocessing, setIsReprocessing] = useState(false);
 
   const chartData = useMemo(
     () => sliceMileageForRange(mileage, range),
@@ -961,20 +970,51 @@ function App() {
 
                             {/* Right: Tabs */}
                             <div className="text-xs">
-                              <div className="mb-2 inline-flex rounded-full bg-slate-900/60 p-1 border border-slate-700/80">
-                                {["splits","hr"].map((t) => (
-                                  <button key={t}
-                                    onClick={() => setDetailsTab(t as any)}
-                                    className={`px-2.5 py-0.5 text-[11px] rounded-full transition ${detailsTab===t?"bg-sky-500 text-slate-900 font-semibold":"bg-transparent text-slate-300 hover:bg-slate-700/60"}`}
+                              <div className="mb-2 inline-flex items-center gap-2 flex-wrap">
+                                <span className="inline-flex rounded-full bg-slate-900/60 p-1 border border-slate-700/80">
+                                  {["splits","pace","hr","zones"].map((t) => (
+                                    <button key={t}
+                                      onClick={() => setDetailsTab(t as any)}
+                                      className={`px-2.5 py-0.5 text-[11px] rounded-full transition ${detailsTab===t?"bg-sky-500 text-slate-900 font-semibold":"bg-transparent text-slate-300 hover:bg-slate-700/60"}`}
+                                    >
+                                      {t === "splits" ? "Splits" : t === "pace" ? "Pace" : t === "hr" ? "Heart rate" : "Zones"}
+                                    </button>
+                                  ))}
+                                </span>
+                                {detailsId && (
+                                  <button
+                                    onClick={async () => {
+                                      if (!detailsId) return;
+                                      try {
+                                        setIsReprocessing(true);
+                                        await reprocessRun(detailsId);
+                                        const [m, s, sp, tr] = await Promise.all([
+                                          getRunMetrics(detailsId),
+                                          getRunSeries(detailsId),
+                                          getRunSplits(detailsId),
+                                          getRunTrack(detailsId),
+                                        ]);
+                                        setDetailsMetrics(m);
+                                        setDetailsSeries(s);
+                                        setDetailsSplits(sp);
+                                        setDetailsTrack(tr);
+                                      } catch (e) {
+                                        console.error(e);
+                                      } finally {
+                                        setIsReprocessing(false);
+                                      }
+                                    }}
+                                    className="px-2.5 py-0.5 rounded-full border border-slate-600 text-[11px] text-slate-200 hover:bg-slate-700/80"
+                                    title="Rebuild splits, metrics and track from file"
                                   >
-                                    {t === "splits" ? "Splits" : "Heart rate"}
+                                    {isReprocessing ? "Reprocessing…" : "Reprocess"}
                                   </button>
-                                ))}
+                                )}
                               </div>
 
-                              {detailsTab === "hr" ? (
-                              detailsMetrics?.hr_zones ? (
-                                (() => {
+                              {detailsTab === "zones" ? (
+                                detailsMetrics?.hr_zones ? (
+                                  (() => {
                                   const z = detailsMetrics!.hr_zones!;
                                   const vals = [z.z1, z.z2, z.z3, z.z4, z.z5];
                                   const total = vals.reduce((a,b)=>a+b,0) || 1;
@@ -1013,23 +1053,73 @@ function App() {
                                   const centerLabel = hoverIdx != null ? `Z${hoverIdx+1}` : "max";
                                   const centerValue = hoverIdx != null ? `${Math.round(vals[hoverIdx]/60)}m` : `${z.hr_max}`;
                                   return (
-                                    <div className="flex items-center gap-4">
-                                      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
-                                        <circle r={R} cx={CX} cy={CY} fill="transparent" stroke="#0f172a" strokeWidth={14} />
-                                        {segs}
-                                        <circle r={54} cx={CX} cy={CY} fill="#0b1220" />
-                                        <text x={CX} y={CY-8} fill="#cbd5e1" fontSize={12} textAnchor="middle">{centerLabel}</text>
-                                        <text x={CX} y={CY+14} fill="#e2e8f0" fontSize={18} textAnchor="middle" fontWeight="600">{centerValue}</text>
-                                      </svg>
+                                    <div className="space-y-2">
+                                      <h4 className="text-slate-200 font-semibold mb-2">Heart rate zones</h4>
+                                      <div className="min-w-[220px] space-y-2">
+                                        {vals.map((v, i) => {
+                                          const pct = Math.round((v / (total || 1)) * 100);
+                                          const label = `Zone ${i+1}`;
+                                          return (
+                                            <div key={i} className="text-[11px]">
+                                              <div className="flex items-center justify-between mb-1">
+                                                <span className="text-slate-300 font-semibold">{label}</span>
+                                                <span className="text-slate-400">{fmtHHMMSS(v)}	{pct}%</span>
+                                              </div>
+                                              <div className="h-2 rounded-full bg-slate-700/60 overflow-hidden">
+                                                <div className="h-full" style={{ width: `${pct}%`, backgroundColor: colors[i] }} />
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
                                     </div>
                                   );
-                                })()
-                              ) : (
-                                <p className="text-slate-500">No HR data</p>
-                              )
-                              ) : (
+                                  })()
+                                ) : (
+                                  <p className="text-slate-500">No HR data</p>
+                                )
+                              ) : null}
+                              {detailsTab === "hr" && detailsSeries ? (
+                                <div>
+                                  <h4 className="text-slate-200 font-semibold mb-2">Heart rate vs elevation</h4>
+                                  {detailsSeries.hr_dist_series && detailsSeries.hr_dist_series.length > 0 ? (
+                                    <div className="h-56 w-full">
+                                      <ResponsiveContainer width="100%" height="100%">
+                                        <ComposedChart data={(() => {
+                                          const byD = new Map<number, any>();
+                                          if (detailsSeries.elev_dist_series) {
+                                            detailsSeries.elev_dist_series.forEach(p => { byD.set(p.d, { d: p.d, elev_ft: p.elev_ft }); });
+                                          }
+                                          detailsSeries.hr_dist_series!.forEach(p => { const row = byD.get(p.d) || { d: p.d }; row.hr = p.hr; byD.set(p.d, row); });
+                                          return Array.from(byD.values()).sort((a,b)=>a.d-b.d);
+                                        })()} margin={{ top: 8, right: 18, left: 0, bottom: 8 }}>
+                                          <XAxis dataKey="d" tick={{ fontSize: 11 }} tickFormatter={(v:number)=>v.toFixed(1)} />
+                                          <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={30} />
+                                          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={30} />
+                                          <Tooltip
+                                            cursor={false}
+                                            contentStyle={{ backgroundColor: '#0b1220', borderColor: '#334155', borderRadius: 8 }}
+                                            labelStyle={{ color: '#cbd5e1' }}
+                                            itemStyle={{ color: '#e2e8f0' }}
+                                            formatter={(v:any, name:any)=> name==='hr'? [`${v} bpm`, 'HR'] : [`${Math.round(v)} ft`, 'Elev']}
+                                            labelFormatter={(l:any)=>`${l.toFixed(2)} mi`}
+                                          />
+                                          {detailsSeries.elev_dist_series && (
+                                            <Area yAxisId="right" type="monotone" dataKey="elev_ft" stroke="#22c55e" fill="#22c55e55" />
+                                          )}
+                                          <Line yAxisId="left" type="monotone" dataKey="hr" stroke="#f43f5e" dot={false} strokeWidth={2} />
+                                        </ComposedChart>
+                                      </ResponsiveContainer>
+                                    </div>
+                                  ) : (
+                                    <p className="text-slate-500">No heart rate series</p>
+                                  )}
+                                </div>
+                              ) : null}
+
+                              {detailsTab === "splits" && (
                               <>
-                              <h4 className="text-slate-200 font-semibold mb-2">Splits (mi)</h4>
+                               <h4 className="text-slate-200 font-semibold mb-2">Splits (mi)</h4>
                               {detailsSplits && detailsSplits.length > 0 ? (
                                 <div className="overflow-x-auto">
                                   <table className="min-w-full text-left text-[11px]">
@@ -1065,6 +1155,43 @@ function App() {
                               )}
                               </>
                               )}
+                              {detailsTab === "pace" && detailsSeries ? (
+                                <div>
+                                  <h4 className="text-slate-200 font-semibold mb-2">Pace vs elevation</h4>
+                                  {detailsSeries.pace_dist_series && detailsSeries.pace_dist_series.length > 0 ? (
+                                    <div className="h-56 w-full">
+                                      <ResponsiveContainer width="100%" height="100%">
+                                        <ComposedChart data={(() => {
+                                          const byD = new Map<number, any>();
+                                          if (detailsSeries.elev_dist_series) {
+                                            detailsSeries.elev_dist_series.forEach(p => { byD.set(p.d, { d: p.d, elev_ft: p.elev_ft }); });
+                                          }
+                                          detailsSeries.pace_dist_series!.forEach(p => { const row = byD.get(p.d) || { d: p.d }; row.pace = p.pace_s_per_mi; byD.set(p.d, row); });
+                                          return Array.from(byD.values()).sort((a,b)=>a.d-b.d);
+                                        })()} margin={{ top: 8, right: 18, left: 0, bottom: 8 }}>
+                                          <XAxis dataKey="d" tick={{ fontSize: 11 }} tickFormatter={(v:number)=>v.toFixed(1)} />
+                                          <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={30} tickFormatter={(v:number)=>fmtPaceSec(v)} />
+                                          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={30} />
+                                          <Tooltip
+                                            cursor={false}
+                                            contentStyle={{ backgroundColor: '#0b1220', borderColor: '#334155', borderRadius: 8 }}
+                                            labelStyle={{ color: '#cbd5e1' }}
+                                            itemStyle={{ color: '#e2e8f0' }}
+                                            formatter={(v:any, name:any)=> name==='pace'? [`${fmtPaceSec(v)}/mi`, 'Pace'] : [`${Math.round(v)} ft`, 'Elev']}
+                                            labelFormatter={(l:any)=>`${l.toFixed(2)} mi`}
+                                          />
+                                          {detailsSeries.elev_dist_series && (
+                                            <Area yAxisId="right" type="monotone" dataKey="elev_ft" stroke="#22c55e" fill="#22c55e55" />
+                                          )}
+                                          <Line yAxisId="left" type="monotone" dataKey="pace" stroke="#38bdf8" dot={false} strokeWidth={2} />
+                                        </ComposedChart>
+                                      </ResponsiveContainer>
+                                    </div>
+                                  ) : (
+                                    <p className="text-slate-500">No pace series</p>
+                                  )}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         )}

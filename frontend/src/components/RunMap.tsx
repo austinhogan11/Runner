@@ -58,7 +58,6 @@ export default function RunMap({ track }: { track: RunTrack }) {
         <Marker position={start} icon={startIcon} />
         <Marker position={end} icon={endIcon} />
         <FitBounds bounds={bounds} />
-        <ZoomControl position="topright" />
       </MapContainer>
     </div>
   );

@@ -309,6 +309,14 @@ def _process_gpx_file(db: Session, run_id: int, path: str):
     seg_elapsed = 0.0  # moving time accumulated for current split
     MOVING_SPEED_MPS = 0.5  # ~1.1 mph; below this we treat as stopped
 
+    # Distance-indexed series for charts
+    hr_dist_series: list[dict] = []  # GPX usually lacks HR but keep structure
+    pace_dist_series: list[dict] = []
+    elev_dist_series: list[dict] = []
+    cumulative_m = 0.0
+    sample_step_m = 160.934  # ~0.1 mi
+    next_sample_m = sample_step_m
+
     # Flatten timestamps
     from datetime import datetime
     def parse_iso(ts):
@@ -330,6 +338,17 @@ def _process_gpx_file(db: Session, run_id: int, path: str):
 
         acc_before = acc_m
         acc_m += d
+        cumulative_m += d
+
+        # sample distance-indexed series if timestamps/elevation present
+        while cumulative_m >= next_sample_m:
+            d_mi = next_sample_m / 1609.34
+            if dt > 0 and d > 0:
+                pace = int(1609.34 * (dt / d))
+                pace_dist_series.append({"d": d_mi, "pace_s_per_mi": pace})
+            if b.get("ele") is not None:
+                elev_dist_series.append({"d": d_mi, "elev_ft": int(float(b["ele"]) * 3.28084)})
+            next_sample_m += sample_step_m
 
         # proportionally allocate moving time into each mile boundary crossed
         rem_d = d
@@ -366,6 +385,9 @@ def _process_gpx_file(db: Session, run_id: int, path: str):
     metrics.elev_gain_ft = float(elev_gain) * 3.28084 if elev_gain else None
     metrics.elev_loss_ft = float(elev_loss) * 3.28084 if elev_loss else None
     metrics.moving_time_sec = int(sum(s["duration_sec"] for s in splits)) if splits else None
+    metrics.hr_dist_series = hr_dist_series
+    metrics.pace_dist_series = pace_dist_series
+    metrics.elev_dist_series = elev_dist_series
 
     db.commit()
 
@@ -492,9 +514,14 @@ def _process_fit_file(db: Session, run_id: int, path: str):
         lat = _semicircles_to_degrees(fields.get("position_lat"))
         lon = _semicircles_to_degrees(fields.get("position_long"))
         ts = fields.get("timestamp")
-        ele = fields.get("altitude")
+        # Prefer enhanced fields when present
+        ele = fields.get("enhanced_altitude")
+        if ele is None:
+            ele = fields.get("altitude")
         hr = fields.get("heart_rate")
-        speed = fields.get("speed")  # m/s
+        speed = fields.get("enhanced_speed")  # m/s
+        if speed is None:
+            speed = fields.get("speed")
         if ts and start_ts is None:
             start_ts = ts
         t = (ts - start_ts).total_seconds() if (ts and start_ts) else None
@@ -504,6 +531,7 @@ def _process_fit_file(db: Session, run_id: int, path: str):
                 "lon": lon,
                 "ele": float(ele) if ele is not None else None,
                 "time": ts.isoformat() if ts else None,
+                "t": int(t) if t is not None else None,
             })
             if prev is not None:
                 total_m += _haversine(prev[0], prev[1], lat, lon)
@@ -593,6 +621,15 @@ def _process_fit_file(db: Session, run_id: int, path: str):
 
     # Prefer FIT lap messages when present (gives timer_time excluding pauses)
     laps = []
+    # Also read session totals to compute a final partial split if needed
+    session_distance_m = None
+    session_timer_s = None
+    for session in ff.get_messages("session"):
+        fields = {f.name: f.value for f in session}
+        if session_distance_m is None and fields.get("total_distance") is not None:
+            session_distance_m = float(fields.get("total_distance"))
+        if session_timer_s is None and fields.get("total_timer_time") is not None:
+            session_timer_s = int(fields.get("total_timer_time"))
     for lap in ff.get_messages("lap"):
         fields = {f.name: f.value for f in lap}
         td = fields.get("total_distance")  # meters
@@ -611,6 +648,8 @@ def _process_fit_file(db: Session, run_id: int, path: str):
     if laps and sum(1 for l in laps if 0.9 <= l["distance_mi"] <= 1.1) >= 1:
         db.query(RunSplit).filter(RunSplit.run_id == run_id).delete()
         idx = 1
+        total_kept_miles = 0.0
+        total_kept_sec = 0
         for l in laps:
             # Only keep near-mile laps for the table; other custom laps may be shown later
             if 0.9 <= l["distance_mi"] <= 1.1:
@@ -624,6 +663,33 @@ def _process_fit_file(db: Session, run_id: int, path: str):
                     elev_gain_ft=l["elev_gain_ft"],
                 ))
                 idx += 1
+                total_kept_miles += float(l["distance_mi"])
+                total_kept_sec += int(l["duration_sec"])
+
+        # Add final partial split if session totals indicate remaining distance
+        rem_mi = None
+        rem_sec = None
+        if session_distance_m is not None:
+            total_mi = session_distance_m / 1609.34
+            rem_mi = max(0.0, float(total_mi) - float(total_kept_miles))
+            # Some devices round laps; treat negligible remainders as zero
+            if rem_mi is not None and rem_mi < 0.01:
+                rem_mi = 0.0
+        if session_timer_s is not None:
+            rem_sec = max(0, int(session_timer_s) - int(total_kept_sec))
+
+        # Fallback: if no session totals, use leftover from approximate pass
+        if (rem_mi is None or rem_mi == 0.0) and acc_m > 0:
+            rem_mi = acc_m / 1609.34
+            rem_sec = int(seg_elapsed)
+
+        if rem_mi and rem_mi > 0.01 and rem_sec is not None and rem_sec > 0:
+            db.add(RunSplit(
+                run_id=run_id,
+                idx=idx,
+                distance_mi=round(rem_mi, 3),
+                duration_sec=int(rem_sec),
+            ))
     else:
         # Use approximated splits if no laps present
         db.query(RunSplit).filter(RunSplit.run_id == run_id).delete()
@@ -678,13 +744,92 @@ def _process_fit_file(db: Session, run_id: int, path: str):
         metrics.max_hr = int(max(pt["hr"] for pt in hr_points))
     metrics.hr_zones = {"z1": zones[0], "z2": zones[1], "z3": zones[2], "z4": zones[3], "z5": zones[4], "hr_max": hr_max}
 
-    # store downsampled series (cap ~600 points)
+    # store time-indexed downsampled series (cap ~600 points)
     def _thin(arr, step):
         return arr[::step] if step > 1 else arr
     step = max(1, int(len(hr_points) / 600))
     metrics.hr_series = _thin(hr_points, step)
     step_p = max(1, int(len(pace_points) / 600))
     metrics.pace_series = _thin(pace_points, step_p)
+    # Build distance-indexed series sampled ~every 0.1 mile using point timestamps
+    hr_dist_series: list[dict] = []
+    pace_dist_series: list[dict] = []
+    elev_dist_series: list[dict] = []
+
+    def interp(series, t_val):
+        if not series or t_val is None:
+            return None
+        # series is sorted by 't'
+        lo = 0
+        hi = len(series) - 1
+        if t_val <= series[0]["t"]:
+            return series[0]
+        if t_val >= series[-1]["t"]:
+            return series[-1]
+        # binary search
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            mt = series[mid]["t"]
+            if mt == t_val:
+                return series[mid]
+            if mt < t_val:
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        # lo is first greater than t_val, hi is last less than t_val
+        a = series[hi]
+        b = series[lo]
+        ta, tb = a["t"], b["t"]
+        frac = (t_val - ta) / (tb - ta) if (tb - ta) else 0.0
+        out = {"t": t_val}
+        for k, v in a.items():
+            if k == "t":
+                continue
+            vb = b.get(k)
+            if isinstance(v, (int, float)) and isinstance(vb, (int, float)):
+                out[k] = v + (vb - v) * frac
+        return out
+
+    # walk distance and sample
+    if len(points) >= 2:
+        sample_step_m = 160.934  # ~0.1 mi
+        next_sample_m = sample_step_m
+        acc_m = 0.0
+        for i in range(1, len(points)):
+            a, b = points[i-1], points[i]
+            d = _haversine(a["lat"], a["lon"], b["lat"], b["lon"]) if a and b else 0.0
+            acc_before = acc_m
+            acc_m += d
+            while acc_m >= next_sample_m:
+                # fraction along this segment
+                needed = next_sample_m - acc_before
+                frac = (needed / d) if d > 0 else 0.0
+                # distance in miles
+                d_mi = (next_sample_m) / 1609.34
+                # time at sample
+                ta = a.get("t")
+                tb = b.get("t")
+                t_samp = None
+                if ta is not None and tb is not None:
+                    t_samp = ta + (tb - ta) * frac
+                # interpolate hr/pace by time series
+                hri = interp(hr_points, t_samp)
+                pci = interp(pace_points, t_samp)
+                if hri and ("hr" in hri):
+                    hr_dist_series.append({"d": round(d_mi, 3), "hr": int(round(hri["hr"]))})
+                if pci and ("pace_s_per_mi" in pci):
+                    pace_dist_series.append({"d": round(d_mi, 3), "pace_s_per_mi": int(round(pci["pace_s_per_mi"]))})
+                # elevation from point interpolation
+                ele_a = a.get("ele")
+                ele_b = b.get("ele")
+                if ele_a is not None and ele_b is not None:
+                    ele = ele_a + (ele_b - ele_a) * frac
+                    elev_dist_series.append({"d": round(d_mi, 3), "elev_ft": int(round(ele * 3.28084))})
+                next_sample_m += sample_step_m
+
+    metrics.hr_dist_series = hr_dist_series
+    metrics.pace_dist_series = pace_dist_series
+    metrics.elev_dist_series = elev_dist_series
     db.commit()
 
 
@@ -763,6 +908,9 @@ def get_run_series(run_id: int, db: Session = Depends(get_db)):
     return {
         "hr_series": m.hr_series or [],
         "pace_series": m.pace_series or [],
+        "hr_dist_series": m.hr_dist_series or [],
+        "pace_dist_series": m.pace_dist_series or [],
+        "elev_dist_series": m.elev_dist_series or [],
     }
 
 
@@ -798,6 +946,78 @@ def get_run_track(run_id: int, db: Session = Depends(get_db)):
         "points_count": t.points_count,
     }
 
+
+@router.post("/{run_id}/reprocess")
+def reprocess_run(
+    run_id: int,
+    background: BackgroundTasks = None,
+    db: Session = Depends(get_db),
+):
+    """Rebuild splits/metrics/series/track for a run from its stored file.
+
+    Preference order: FIT > GPX. If no file found, return 404.
+    """
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    files = (
+        db.query(RunFile)
+        .filter(RunFile.run_id == run_id)
+        .order_by(RunFile.created_at.asc())
+        .all()
+    )
+    if not files:
+        raise HTTPException(status_code=404, detail="No stored files for run")
+
+    chosen = None
+    # Prefer FIT when available
+    for f in files:
+        if (f.source or "").lower() == "fit":
+            chosen = f
+            break
+    if chosen is None:
+        # Fall back to first GPX or any
+        for f in files:
+            if (f.source or "").lower() == "gpx":
+                chosen = f
+                break
+        if chosen is None:
+            chosen = files[0]
+
+    # Clear existing derived rows so we don't duplicate
+    db.query(RunSplit).filter(RunSplit.run_id == run_id).delete()
+    db.query(RunTrack).filter(RunTrack.run_id == run_id).delete()
+    db.query(RunMetrics).filter(RunMetrics.run_id == run_id).delete()
+    db.commit()
+
+    path = chosen.storage_path
+    if not path or not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Stored file missing on disk")
+
+    src = (chosen.source or "").lower()
+    if background is not None:
+        if src == "gpx" or path.lower().endswith(".gpx"):
+            background.add_task(_process_gpx_file, db, run_id, path)
+        else:
+            background.add_task(_process_fit_file, db, run_id, path)
+        # Mark processed optimistically; processors will commit outputs
+        chosen.processed = True
+        db.commit()
+    else:
+        if src == "gpx" or path.lower().endswith(".gpx"):
+            _process_gpx_file(db, run_id, path)
+        else:
+            _process_fit_file(db, run_id, path)
+        chosen.processed = True
+        db.commit()
+
+    return {
+        "message": "Reprocess started" if background is not None else "Reprocessed",
+        "run_id": run_id,
+        "file": chosen.filename,
+        "source": chosen.source,
+    }
 
 @router.post("/import", response_model=RunRead)
 def import_activity(
