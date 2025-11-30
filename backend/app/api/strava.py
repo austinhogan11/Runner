@@ -8,6 +8,7 @@ from app.models.run_track import RunTrack
 from app.models.run_metrics import RunMetrics
 from app.models.run_split import RunSplit
 from app.core.time_utils import compute_pace, seconds_to_hhmmss, hhmm_to_time
+from app.core.constants import HR_ZONE_BOUNDS, MILE_M, SAMPLE_STEP_M, MOVING_SPEED_MPS
 from app.api.runs import _haversine
 import os, json, time, math
 import httpx
@@ -276,11 +277,11 @@ def sync_recent_runs(
                 db.add(track)
 
                 # Splits by distance using moving time
-                target_m = 1609.34
+                target_m = MILE_M
                 acc_m = 0.0
                 seg_elapsed = 0.0
                 splits = []
-                sample_step_m = 160.934
+                sample_step_m = SAMPLE_STEP_M
                 next_sample_m = sample_step_m
 
                 hr_dist_series = []
@@ -295,7 +296,7 @@ def sync_recent_runs(
                     if a.get("t") is not None and b.get("t") is not None:
                         dt = float(b["t"] - a["t"]) if b["t"] >= a["t"] else 0.0
                     moving_dt = dt
-                    if vel and i < len(vel) and vel[i] is not None and vel[i] < 0.5:
+                    if vel and i < len(vel) and vel[i] is not None and vel[i] < MOVING_SPEED_MPS:
                         moving_dt = 0.0
 
                     acc_before = acc_m
@@ -341,7 +342,7 @@ def sync_recent_runs(
                 # HR zones from streams when available
                 if heartrate and time_s and len(heartrate) == len(time_s):
                     hr_max = settings.hr_max or (220 - settings.age)
-                    zone_bounds = [0.5, 0.6, 0.7, 0.8, 0.9, 1.01]
+                    zone_bounds = HR_ZONE_BOUNDS
                     zones = [0, 0, 0, 0, 0]
                     max_hr = 0
                     sum_hr = 0

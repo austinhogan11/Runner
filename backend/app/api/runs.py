@@ -18,6 +18,7 @@ from app.core.time_utils import (
     time_to_hhmm,
     to_local_datetime,
 )
+from app.core.constants import MILE_M, SAMPLE_STEP_M, MOVING_SPEED_MPS as CONST_MOVING_SPEED_MPS, HR_ZONE_BOUNDS
 from app.core.config import settings
 import os
 import math
@@ -304,18 +305,18 @@ def _process_gpx_file(db: Session, run_id: int, path: str):
     # For MVP, approximate duration by time deltas; if missing timestamps, skip splits
     splits = []
     split_idx = 1
-    target_m = 1609.34
+    target_m = MILE_M
     acc_m = 0.0
     last_time = None
     seg_elapsed = 0.0  # moving time accumulated for current split
-    MOVING_SPEED_MPS = 0.5  # ~1.1 mph; below this we treat as stopped
+    MOVING_SPEED_MPS = CONST_MOVING_SPEED_MPS  # ~1.1 mph; below this we treat as stopped
 
     # Distance-indexed series for charts
     hr_dist_series: list[dict] = []  # GPX usually lacks HR but keep structure
     pace_dist_series: list[dict] = []
     elev_dist_series: list[dict] = []
     cumulative_m = 0.0
-    sample_step_m = 160.934  # ~0.1 mi
+    sample_step_m = SAMPLE_STEP_M  # ~0.1 mi
     next_sample_m = sample_step_m
 
     # Flatten timestamps
@@ -615,10 +616,10 @@ def _process_tcx_file(db: Session, run_id: int, path: str):
         try: return datetime.fromisoformat(ts.replace('Z','+00:00')) if ts else None
         except Exception: return None
     splits = []
-    target_m = 1609.34
+    target_m = MILE_M
     acc_m = 0.0
     seg_elapsed = 0.0
-    MOVING_SPEED_MPS = 0.5
+    MOVING_SPEED_MPS = CONST_MOVING_SPEED_MPS
 
     # distance-indexed series
     elev_dist_series = []
@@ -770,10 +771,10 @@ def _process_fit_file(db: Session, run_id: int, path: str):
 
     # Splits (prefer device laps if present; fallback to approximation)
     splits = []
-    target_m = 1609.34
+    target_m = MILE_M
     acc_m = 0.0
     seg_elapsed = 0.0  # moving time in current split
-    MOVING_SPEED_MPS = 0.5
+    MOVING_SPEED_MPS = CONST_MOVING_SPEED_MPS
 
     from datetime import datetime
     def parse_iso(ts):
@@ -919,7 +920,7 @@ def _process_fit_file(db: Session, run_id: int, path: str):
 
     # HR summary + zones using estimated HR max
     hr_max = settings.hr_max or (220 - settings.age)
-    zone_bounds = [0.5, 0.6, 0.7, 0.8, 0.9, 1.01]
+    zone_bounds = HR_ZONE_BOUNDS
     zones = [0, 0, 0, 0, 0]
     for i in range(1, len(hr_points)):
         prev_p, p = hr_points[i-1], hr_points[i]

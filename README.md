@@ -103,6 +103,14 @@ Endpoints of interest:
 
 See `docs/ARCHITECTURE.md` for a deeper overview and `docs/API.md` for endpoint details.
 
+Deployment quickstart: see `docs/DEPLOY.md` (backend env, running uvicorn, building the frontend, and optional Strava linking/sync commands).
+
+Strava import:
+
+- Link account: `GET /strava/auth_url` → open the URL and approve. Tokens are saved under `uploads/strava/tokens.json`.
+- Sync last 12 weeks: `POST /strava/sync?weeks=12`
+- Sync a date window in pages of 50: `POST /strava/sync?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&types=Run&max_activities=50&start_page=1`
+
 ### Code style and notes
 
 - Pydantic v2 is used (`model_config=from_attributes=True`)
