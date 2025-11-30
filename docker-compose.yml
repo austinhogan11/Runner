@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   db:
     image: postgres:16-alpine
@@ -5,6 +7,8 @@ services:
       POSTGRES_DB: runner
       POSTGRES_USER: runner
       POSTGRES_PASSWORD: runner
+    volumes:
+      - db-data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
@@ -19,19 +23,32 @@ services:
       dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg2://runner:runner@db:5432/runner
+      TIMEZONE: ${TIMEZONE:-America/New_York}
+      AGE: ${AGE:-27}
+      HR_MAX: ${HR_MAX:-}
+      UPLOADS_DIR: /app/uploads
+      # Optional Strava OAuth
+      STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID:-}
+      STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET:-}
+      STRAVA_REDIRECT_URI: ${STRAVA_REDIRECT_URI:-http://localhost:8000/strava/callback}
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "8000:8000"
+    volumes:
+      - ./data/uploads:/app/uploads
 
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      dockerfile: DockerFile
       args:
         VITE_API_URL: http://localhost:8000
     depends_on:
       - backend
     ports:
       - "5173:80"
+
+volumes:
+  db-data:
