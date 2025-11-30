@@ -579,7 +579,7 @@ function App() {
         {/* WEEKLY RUN LOG */}
         <section className="bg-slate-800/80 border border-slate-700 rounded-2xl shadow-lg shadow-black/40 p-4">
 
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
             <div>
               <h2 className="font-semibold text-slate-100 text-lg md:text-xl">
                 This week&apos;s runs
@@ -664,7 +664,8 @@ function App() {
               })()}
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowAddForm((open) => !open)}
                 className="px-3 py-1.5 rounded-full border border-sky-500/60 bg-sky-500/10 text-sm text-sky-200 hover:bg-sky-500/20 shadow shadow-sky-500/30 transition whitespace-nowrap leading-none"
@@ -748,6 +749,7 @@ function App() {
               >
                 {isStravaSyncing ? "Syncing…" : "Sync Strava (16w)"}
               </button>
+              </div>
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-slate-400">Filter:</span>
                 <select
@@ -761,22 +763,22 @@ function App() {
                   <option value="long">Long</option>
                   <option value="race">Race</option>
                 </select>
+                <button
+                  onClick={handlePrevWeek}
+                  className="ml-2 px-3 py-1.5 rounded-full border border-slate-600 text-sm text-slate-200 hover:bg-slate-700/80 transition"
+                  title="Previous week"
+                >
+                  ←
+                </button>
+                <button
+                  onClick={handleNextWeek}
+                  className="px-3 py-1.5 rounded-full border border-sky-500/60 bg-sky-500/20 text-sm text-sky-200 hover:bg-sky-500/30 shadow shadow-sky-500/40 transition disabled:opacity-40"
+                  disabled={weekOffset === 0}
+                  title="Next week"
+                >
+                  →
+                </button>
               </div>
-              <button
-                onClick={handlePrevWeek}
-                className="px-3 py-1.5 rounded-full border border-slate-600 text-sm text-slate-200 hover:bg-slate-700/80 transition"
-                title="Previous week"
-              >
-                ←
-              </button>
-              <button
-                onClick={handleNextWeek}
-                className="px-3 py-1.5 rounded-full border border-sky-500/60 bg-sky-500/20 text-sm text-sky-200 hover:bg-sky-500/30 shadow shadow-sky-500/40 transition disabled:opacity-40"
-                disabled={weekOffset === 0}
-                title="Next week"
-              >
-                →
-              </button>
             </div>
           </div>
           {stravaStatus && (
