@@ -191,3 +191,30 @@ export async function reprocessRun(id: number): Promise<{ message: string } & Re
   if (!res.ok) throw new Error("Failed to reprocess run");
   return res.json();
 }
+
+// ------- Strava API helpers ------- //
+export async function getStravaAuthUrl(): Promise<{ url: string }> {
+  const res = await fetch(`${API_URL}/strava/auth_url`);
+  if (!res.ok) throw new Error("Strava client not configured");
+  return res.json();
+}
+
+export async function syncStrava(params: {
+  weeks?: number;
+  max_activities?: number;
+  types?: string;
+  start_date?: string;
+  end_date?: string;
+  start_page?: number;
+} = {}): Promise<{ imported: number; note?: string }> {
+  const url = new URL(`${API_URL}/strava/sync`);
+  if (params.weeks != null) url.searchParams.set("weeks", String(params.weeks));
+  if (params.max_activities != null) url.searchParams.set("max_activities", String(params.max_activities));
+  if (params.types) url.searchParams.set("types", params.types);
+  if (params.start_date) url.searchParams.set("start_date", params.start_date);
+  if (params.end_date) url.searchParams.set("end_date", params.end_date);
+  if (params.start_page != null) url.searchParams.set("start_page", String(params.start_page));
+  const res = await fetch(url.toString(), { method: "POST" });
+  if (!res.ok) throw new Error("Strava sync failed");
+  return res.json();
+}
