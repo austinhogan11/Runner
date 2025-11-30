@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { getWeeklyMileage, getRunsInRange, createRun, updateRun, deleteRun, getWeeklyGoal, upsertWeeklyGoal, importRun, getRunMetrics, getRunSeries, getRunSplits, getRunTrack, reprocessRun } from "./api";
+import { getWeeklyMileage, getRunsInRange, createRun, updateRun, deleteRun, getWeeklyGoal, upsertWeeklyGoal, importRun, getRunMetrics, getRunSeries, getRunSplits, getRunTrack, reprocessRun, getStravaAuthUrl, syncStrava, getStravaStatus } from "./api";
 import RunMap from "./components/RunMap";
 import type { WeeklyMileagePoint, Run, RunCreate, WeeklyGoal, RunMetrics, RunSeries, RunSplit, RunTrack } from "./api";
 import {
@@ -159,6 +159,9 @@ function App() {
   type DetailsTab = "splits" | "pace" | "hr" | "zones";
   const [detailsTab, setDetailsTab] = useState<DetailsTab>("splits");
   const [isReprocessing, setIsReprocessing] = useState(false);
+  const [isStravaSyncing, setIsStravaSyncing] = useState(false);
+  const [stravaStatus, setStravaStatus] = useState<string | null>(null);
+  const [isStravaLinked, setIsStravaLinked] = useState(false);
 
   const chartData = useMemo(
     () => sliceMileageForRange(mileage, range),
@@ -351,6 +354,16 @@ function App() {
   useEffect(() => {
     loadRunsForWeek();
   }, [loadRunsForWeek]);
+
+  useEffect(() => {
+    // Check once on load whether Strava is linked
+    (async () => {
+      try {
+        const s = await getStravaStatus();
+        setIsStravaLinked(!!s.linked);
+      } catch {}
+    })();
+  }, []);
 
   const loadWeekGoal = useCallback(async () => {
     try {
@@ -682,6 +695,59 @@ function App() {
                   }}
                 />
               </label>
+              {/* Strava connect + sync (header controls) */}
+              <button
+                onClick={async () => {
+                  try {
+                    const { url } = await getStravaAuthUrl();
+                    window.open(url, "_blank");
+                    // Poll for 20s to detect link without manual refresh
+                    const start = Date.now();
+                    const poll = async () => {
+                      try {
+                        const s = await getStravaStatus();
+                        if (s.linked) {
+                          setIsStravaLinked(true);
+                          setStravaStatus("Strava linked");
+                          return;
+                        }
+                      } catch {}
+                      if (Date.now() - start < 20000) {
+                        setTimeout(poll, 2000);
+                      }
+                    };
+                    setTimeout(poll, 2000);
+                  } catch (e: any) {
+                    alert(e?.message || "Strava is not configured on the server");
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-full border ${isStravaLinked ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-200' : 'border-orange-500/60 bg-orange-500/10 text-orange-200 hover:bg-orange-500/20'} text-sm transition whitespace-nowrap leading-none`}
+                title={isStravaLinked ? "Strava linked" : "Link your Strava account"}
+              >
+                {isStravaLinked ? 'Strava connected' : 'Connect Strava'}
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    setIsStravaSyncing(true);
+                    setStravaStatus(null);
+                    // Last 16 weeks for a focused import window.
+                    const r = await syncStrava({ weeks: 16, max_activities: 50 });
+                    setStravaStatus(`Imported ${r.imported}${r.note ? ` • ${r.note}` : ''}`);
+                    await loadRunsForWeek();
+                    await loadMileage();
+                  } catch (e: any) {
+                    setStravaStatus(e?.message || "Strava sync failed");
+                  } finally {
+                    setIsStravaSyncing(false);
+                  }
+                }}
+                className="px-3 py-1.5 rounded-full border border-emerald-500/60 bg-emerald-500/10 text-sm text-emerald-200 hover:bg-emerald-500/20 transition whitespace-nowrap leading-none disabled:opacity-50"
+                disabled={isStravaSyncing}
+                title="Sync last 16 weeks from Strava"
+              >
+                {isStravaSyncing ? "Syncing…" : "Sync Strava (16w)"}
+              </button>
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-slate-400">Filter:</span>
                 <select
@@ -713,6 +779,9 @@ function App() {
               </button>
             </div>
           </div>
+          {stravaStatus && (
+            <div className="text-xs text-slate-400 mt-1">{stravaStatus}</div>
+          )}
 
           {showAddForm && (
             <form
@@ -754,8 +823,8 @@ function App() {
                     className="rounded-md bg-slate-800 border border-slate-600 px-2 py-1 text-xs text-slate-100"
                     placeholder="Easy run, Long run, Workout, etc."
                   />
-                </label>
-              </div>
+              </label>
+            </div>
               <div className="grid gap-3 md:grid-cols-4">
                 <label className="flex flex-col text-xs text-slate-300 gap-1">
                   Distance (mi)

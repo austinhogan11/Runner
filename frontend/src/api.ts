@@ -199,6 +199,12 @@ export async function getStravaAuthUrl(): Promise<{ url: string }> {
   return res.json();
 }
 
+export async function getStravaStatus(): Promise<{ linked: boolean; athlete?: { id?: number; firstname?: string; lastname?: string } }>{
+  const res = await fetch(`${API_URL}/strava/status`);
+  if (!res.ok) throw new Error("Failed to check Strava status");
+  return res.json();
+}
+
 export async function syncStrava(params: {
   weeks?: number;
   max_activities?: number;

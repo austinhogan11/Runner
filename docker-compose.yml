@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   db:
     image: postgres:16-alpine
@@ -20,7 +18,7 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: DockerFile
     environment:
       DATABASE_URL: postgresql+psycopg2://runner:runner@db:5432/runner
       TIMEZONE: ${TIMEZONE:-America/New_York}

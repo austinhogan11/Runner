@@ -11,3 +11,5 @@ __pycache__/
 .git
 tests/
 docs/
+uploads/
+*.log

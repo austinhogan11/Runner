@@ -124,6 +124,26 @@ def _refresh_if_needed(tok):
     return nt
 
 
+@router.get("/status")
+def strava_status():
+    """Return whether Strava is linked and basic athlete info if available.
+
+    Does not contact Strava; it only checks for a stored token file.
+    """
+    tok = _load_tokens()
+    if not tok:
+        return {"linked": False}
+    athlete = tok.get("athlete") or {}
+    return {
+        "linked": True,
+        "athlete": {
+            "id": athlete.get("id"),
+            "firstname": athlete.get("firstname"),
+            "lastname": athlete.get("lastname"),
+        },
+    }
+
+
 @router.post("/sync")
 def sync_recent_runs(
     weeks: int = Query(12, ge=1, le=104, description="Ignored if start_date provided"),
