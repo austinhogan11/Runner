@@ -24,6 +24,7 @@ import math
 import gpxpy
 import gpxpy.gpx
 from fitparse import FitFile
+import xml.etree.ElementTree as ET
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -488,6 +489,196 @@ def _fit_basic_stats(path: str):
         start_hhmm = None
         first_date = None
     return first_date, start_hhmm, duration_seconds, round(distance_miles, 2)
+
+
+def _tcx_basic_stats(path: str):
+    """Extract (date, local_start_hhmm, duration_seconds, distance_miles) from TCX.
+    Strava exports TCX with Trackpoint Time; distance may be present in Lap.
+    """
+    tree = ET.parse(path)
+    root = tree.getroot()
+    ns = {
+        'tcx': 'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2'
+    }
+    times = []
+    total_distance_m = 0.0
+    # collect Trackpoint times
+    for tp in root.findall('.//tcx:Trackpoint', ns):
+        t = tp.find('tcx:Time', ns)
+        if t is not None and t.text:
+            try:
+                from datetime import datetime
+                times.append(datetime.fromisoformat(t.text.replace('Z','+00:00')))
+            except Exception:
+                pass
+    # distance from laps if present
+    for lap in root.findall('.//tcx:Lap', ns):
+        dm = lap.find('tcx:DistanceMeters', ns)
+        if dm is not None and dm.text:
+            try:
+                total_distance_m += float(dm.text)
+            except Exception:
+                pass
+    if times:
+        start_ts = min(times)
+        end_ts = max(times)
+        duration_seconds = int((end_ts - start_ts).total_seconds())
+        local_start = to_local_datetime(start_ts, settings.timezone)
+        start_hhmm = local_start.strftime("%H:%M")
+        first_date = local_start.date()
+    else:
+        duration_seconds = 0
+        start_hhmm = None
+        first_date = None
+    distance_miles = (total_distance_m / 1609.34) if total_distance_m else 0.0
+    return first_date, start_hhmm, duration_seconds, round(distance_miles, 2)
+
+
+def _process_tcx_file(db: Session, run_id: int, path: str):
+    """Parse TCX and persist track, splits, metrics, and distance-indexed series.
+    This is a middle-ground between FIT and GPX: HR often present, timestamps + elevation available.
+    """
+    tree = ET.parse(path)
+    root = tree.getroot()
+    ns = { 'tcx': 'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2' }
+
+    from datetime import datetime
+    def parse_time(s):
+        try:
+            return datetime.fromisoformat(s.replace('Z','+00:00'))
+        except Exception:
+            return None
+
+    points = []
+    prev = None
+    total_m = 0.0
+    elev_gain = 0.0
+    elev_loss = 0.0
+    for tp in root.findall('.//tcx:Trackpoint', ns):
+        tnode = tp.find('tcx:Time', ns)
+        pnode = tp.find('tcx:Position', ns)
+        enode = tp.find('tcx:AltitudeMeters', ns)
+        hrnode = tp.find('tcx:HeartRateBpm', ns)
+        lat = lon = None
+        if pnode is not None:
+            lat_e = pnode.find('tcx:LatitudeDegrees', ns)
+            lon_e = pnode.find('tcx:LongitudeDegrees', ns)
+            lat = float(lat_e.text) if lat_e is not None and lat_e.text else None
+            lon = float(lon_e.text) if lon_e is not None and lon_e.text else None
+        ele = float(enode.text) if enode is not None and enode.text else None
+        ts = parse_time(tnode.text) if tnode is not None and tnode.text else None
+        hr = None
+        if hrnode is not None:
+            v = hrnode.find('tcx:Value', ns)
+            if v is not None and v.text:
+                try:
+                    hr = int(float(v.text))
+                except Exception:
+                    pass
+        if lat is None or lon is None:
+            continue
+        points.append({
+            'lat': lat,
+            'lon': lon,
+            'ele': ele,
+            'time': ts.isoformat() if ts else None,
+        })
+        if prev is not None:
+            total_m += _haversine(prev[0], prev[1], lat, lon)
+            if ele is not None and prev[2] is not None:
+                de = ele - prev[2]
+                if de > 0: elev_gain += de
+                else: elev_loss += -de
+        prev = (lat, lon, ele)
+
+    # Track + bounds
+    if points:
+        lats = [p['lat'] for p in points]
+        lons = [p['lon'] for p in points]
+        bounds = { 'minLat': min(lats), 'minLon': min(lons), 'maxLat': max(lats), 'maxLon': max(lons) }
+        coords = [[p['lon'], p['lat']] for p in points]
+        geojson = { 'type': 'LineString', 'coordinates': coords }
+    else:
+        bounds = None
+        geojson = None
+    track = db.query(RunTrack).filter(RunTrack.run_id == run_id).first()
+    if not track:
+        track = RunTrack(run_id=run_id)
+        db.add(track)
+    track.geojson = geojson
+    track.bounds = bounds
+    track.points_count = len(points)
+
+    # Splits moving-time per mile
+    from datetime import datetime
+    def parse_iso(ts):
+        try: return datetime.fromisoformat(ts.replace('Z','+00:00')) if ts else None
+        except Exception: return None
+    splits = []
+    target_m = 1609.34
+    acc_m = 0.0
+    seg_elapsed = 0.0
+    MOVING_SPEED_MPS = 0.5
+
+    # distance-indexed series
+    elev_dist_series = []
+    hr_dist_series = []
+    pace_dist_series = []
+    cumulative_m = 0.0
+    sample_step_m = 160.934
+    next_sample_m = sample_step_m
+
+    for i in range(1, len(points)):
+        a, b = points[i-1], points[i]
+        d = _haversine(a['lat'], a['lon'], b['lat'], b['lon'])
+        ta, tb = parse_iso(a['time']), parse_iso(b['time'])
+        dt = (tb - ta).total_seconds() if ta and tb else 0.0
+        moving_dt = dt if (dt > 0 and d / dt >= MOVING_SPEED_MPS) else 0.0
+
+        acc_before = acc_m
+        acc_m += d
+        cumulative_m += d
+        while cumulative_m >= next_sample_m:
+            d_mi = next_sample_m / 1609.34
+            if dt > 0 and d > 0:
+                pace = int(1609.34 * (dt / d))
+                pace_dist_series.append({'d': round(d_mi,3), 'pace_s_per_mi': pace})
+            if b.get('ele') is not None:
+                elev_dist_series.append({'d': round(d_mi,3), 'elev_ft': int(float(b['ele']) * 3.28084)})
+            # HR at sample: use previous point HR if present (TCX may not have per point HR)
+            # Many TCX store HR at Trackpoint level; simple carry-forward approximation
+            # Not building time-indexed HR here to keep implementation minimal
+            next_sample_m += sample_step_m
+
+        rem_d = d
+        rem_moving_dt = moving_dt
+        while acc_before + rem_d >= target_m:
+            needed = target_m - acc_before
+            frac = (needed / rem_d) if rem_d > 0 else 0.0
+            seg_elapsed += rem_moving_dt * frac
+            splits.append({'idx': len(splits)+1, 'distance_mi': 1.0, 'duration_sec': int(seg_elapsed) if seg_elapsed>0 else 0})
+            rem_d -= needed
+            rem_moving_dt = rem_moving_dt * (1 - frac)
+            acc_before = 0.0
+            acc_m -= target_m
+            seg_elapsed = 0.0
+        seg_elapsed += rem_moving_dt
+
+    db.query(RunSplit).filter(RunSplit.run_id == run_id).delete()
+    for s in splits:
+        db.add(RunSplit(run_id=run_id, idx=s['idx'], distance_mi=s['distance_mi'], duration_sec=s['duration_sec']))
+
+    metrics = db.query(RunMetrics).filter(RunMetrics.run_id == run_id).first()
+    if not metrics:
+        metrics = RunMetrics(run_id=run_id)
+        db.add(metrics)
+    metrics.elev_gain_ft = float(elev_gain) * 3.28084 if elev_gain else None
+    metrics.elev_loss_ft = float(elev_loss) * 3.28084 if elev_loss else None
+    metrics.moving_time_sec = int(sum(s['duration_sec'] for s in splits)) if splits else None
+    metrics.hr_dist_series = hr_dist_series
+    metrics.pace_dist_series = pace_dist_series
+    metrics.elev_dist_series = elev_dist_series
+    db.commit()
 
 
 def _process_fit_file(db: Session, run_id: int, path: str):
@@ -1027,8 +1218,8 @@ def import_activity(
 ):
     filename = file.filename or "import"
     ext = os.path.splitext(filename)[1].lower()
-    if ext not in [".gpx", ".fit"]:
-        raise HTTPException(status_code=400, detail="Only .gpx or .fit files are supported")
+    if ext not in [".gpx", ".fit", ".tcx"]:
+        raise HTTPException(status_code=400, detail="Only .fit, .gpx or .tcx files are supported")
 
     # Save to temp location
     dir_path = os.path.join(settings.uploads_dir, "imports")
@@ -1042,6 +1233,8 @@ def import_activity(
     try:
         if ext == ".gpx":
             first_date, start_hhmm, duration_seconds, distance_miles = _gpx_basic_stats(save_path)
+        elif ext == ".tcx":
+            first_date, start_hhmm, duration_seconds, distance_miles = _tcx_basic_stats(save_path)
         else:
             first_date, start_hhmm, duration_seconds, distance_miles = _fit_basic_stats(save_path)
     except Exception as e:
@@ -1058,7 +1251,7 @@ def import_activity(
         duration_seconds=duration_seconds if duration_seconds > 0 else 0,
         run_type="easy",
         start_time=hhmm_to_time(start_hhmm) if start_hhmm else None,
-        source="fit" if ext == ".fit" else "gpx",
+        source=("fit" if ext == ".fit" else ("tcx" if ext == ".tcx" else "gpx")),
     )
     db.add(run)
     db.commit()
@@ -1090,6 +1283,8 @@ def import_activity(
     if background is not None:
         if ext == ".gpx":
             background.add_task(_process_gpx_file, db, run.id, final_path)
+        elif ext == ".tcx":
+            background.add_task(_process_tcx_file, db, run.id, final_path)
         else:
             background.add_task(_process_fit_file, db, run.id, final_path)
         rf.processed = True
@@ -1097,6 +1292,8 @@ def import_activity(
     else:
         if ext == ".gpx":
             _process_gpx_file(db, run.id, final_path)
+        elif ext == ".tcx":
+            _process_tcx_file(db, run.id, final_path)
         else:
             _process_fit_file(db, run.id, final_path)
         rf.processed = True

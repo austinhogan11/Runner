@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     age: int = 27
     hr_max: int | None = None  # if None, computed as 220 - age
 
+    # Strava OAuth (optional)
+    strava_client_id: str | None = None
+    strava_client_secret: str | None = None
+    strava_redirect_uri: str | None = None
+    strava_tokens_path: str = "uploads/strava/tokens.json"
+
     class Config:
         env_file = ".env"
 

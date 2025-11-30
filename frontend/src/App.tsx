@@ -446,6 +446,8 @@ function App() {
                         tick={{ fontSize: 12, fill: "#94a3b8" }}
                         tickFormatter={(value: number) => value.toFixed(1)}
                         width={40}
+                        domain={[0, 'dataMax']}
+                        allowDecimals={false}
                       />
                       <Tooltip
                         contentStyle={{
@@ -651,16 +653,16 @@ function App() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowAddForm((open) => !open)}
-                className="px-3 py-1.5 rounded-full border border-sky-500/60 bg-sky-500/10 text-sm text-sky-200 hover:bg-sky-500/20 shadow shadow-sky-500/30 transition"
+                className="px-3 py-1.5 rounded-full border border-sky-500/60 bg-sky-500/10 text-sm text-sky-200 hover:bg-sky-500/20 shadow shadow-sky-500/30 transition whitespace-nowrap leading-none"
               >
                 {showAddForm ? "Cancel" : "Add run"}
               </button>
               {/* Import GPX to create a run */}
-              <label className="px-3 py-1.5 rounded-full border border-slate-600 text-sm text-slate-200 hover:bg-slate-700/80 transition cursor-pointer">
-                Import GPX/FIT
+              <label className="px-3 py-1.5 rounded-full border border-slate-600 text-sm text-slate-200 hover:bg-slate-700/80 transition cursor-pointer whitespace-nowrap leading-none">
+                Import FIT/GPX/TCX
                 <input
                   type="file"
-                  accept=".gpx,.fit"
+                  accept=".fit,.gpx,.tcx"
                   className="hidden"
                   onChange={async (e) => {
                     const input = e.currentTarget as HTMLInputElement;
@@ -1019,46 +1021,21 @@ function App() {
                                   const vals = [z.z1, z.z2, z.z3, z.z4, z.z5];
                                   const total = vals.reduce((a,b)=>a+b,0) || 1;
                                   const colors = ["#34d399","#22c55e","#f59e0b","#f97316","#f43f5e"]; // Z1..Z5
-                                  const W = 220, H = 220, CX = 110, CY = 110, R = 78; const C = 2*Math.PI*R;
-                                  let offset = 0;
-                                  const hoverIdx = hrHoverIdx;
-                                  const segs = vals.map((v,i)=>{
-                                    const frac = v/total; const dash = C*frac; const emph = hoverIdx === i;
-                                    const midAngle = (offset + dash/2)/C * 2*Math.PI - Math.PI/2; // start at top
-                                    const lx = CX + (R-18)*Math.cos(midAngle);
-                                    const ly = CY + (R-18)*Math.sin(midAngle);
-                                    const label = `Z${i+1}`;
-                                    const seg = (
-                                      <g key={i}
-                                        onMouseEnter={() => setHrHoverIdx(i)}
-                                        onMouseLeave={() => setHrHoverIdx(null)}
-                                      >
-                                        <circle r={R} cx={CX} cy={CY} fill="transparent" stroke={colors[i]}
-                                          strokeWidth={emph ? 16 : 14}
-                                          strokeDasharray={`${dash} ${C-dash}`}
-                                          strokeDashoffset={-offset}
-                                          strokeLinecap="round"
-                                          opacity={hoverIdx === null || emph ? 1 : 0.35}
-                                          style={{ transition: "all 120ms ease" }}
-                                        />
-                                        {frac > 0.06 && (
-                                          <text x={lx} y={ly} fill="#cbd5e1" fontSize={11} textAnchor="middle" dominantBaseline="middle">
-                                            {label}
-                                          </text>
-                                        )}
-                                      </g>
-                                    );
-                                    offset += dash; return seg;
+                                  const hrMax = z.hr_max ?? 0;
+                                  const bounds = [0.5,0.6,0.7,0.8,0.9,1.0];
+                                  const rangeLabels = bounds.slice(0,5).map((low, idx) => {
+                                    const high = bounds[idx+1];
+                                    const lo = Math.round(low * hrMax);
+                                    const hi = Math.round(high * hrMax) - 1;
+                                    return ` ${lo}–${hi} bpm`;
                                   });
-                                  const centerLabel = hoverIdx != null ? `Z${hoverIdx+1}` : "max";
-                                  const centerValue = hoverIdx != null ? `${Math.round(vals[hoverIdx]/60)}m` : `${z.hr_max}`;
                                   return (
                                     <div className="space-y-2">
                                       <h4 className="text-slate-200 font-semibold mb-2">Heart rate zones</h4>
                                       <div className="min-w-[220px] space-y-2">
                                         {vals.map((v, i) => {
                                           const pct = Math.round((v / (total || 1)) * 100);
-                                          const label = `Zone ${i+1}`;
+                                          const label = `Zone ${i+1} •${rangeLabels[i]}`;
                                           return (
                                             <div key={i} className="text-[11px]">
                                               <div className="flex items-center justify-between mb-1">
