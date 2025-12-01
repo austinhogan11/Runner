@@ -41,3 +41,9 @@ frontend/.env
 .vscode/
 .idea/
 *.swp
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+crash.log

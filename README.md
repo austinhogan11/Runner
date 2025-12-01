@@ -1,128 +1,97 @@
-## Runner
+# Runner
 
-A modern running log with weekly trends, quick entry, and rich activity details
-(GPX/FIT import, splits, HR zones, and a dark basemap route view).
+## Modern Training Log
 
 ### Features
 
-- Weekly dashboard with charts and a per‑week log
-- CRUD for manual runs
-- Run type taxonomy: easy / workout / long / race
-- Import activities from GPX or FIT
-  - FIT: uses device laps for accurate mile splits (timer time)
-  - HR zones, HR/pace series, elevation gain/loss
-- Goals: set weekly mileage targets with a progress bar
-- Dark map for GPS routes (Leaflet + Carto Dark Matter)
+#### 1. Weekly Training Log
+- An easy to read running log for the week.
+    - Set & Track your goal mileage for the week.
+    - Week range is Monday-Sunday
+    - Run cards feature metrics for quick observations
+        - Title
+        - Date & Time
+        - Distance, Duration & Pace
+    - Expand Run Cards to view detailed data if available.
+        - GPS Data
+        - Mile splits
+        - Heart Rate, Pace, and Elevation data.
+            - Time in Heart Rate Zones
+            - Pace vs Elevation
+            - HR vs Elevation
+    - Add manual run entries
+    - Import Garmin (.gpx/.fit) or Strava (.tcx) Runs
+    - Edit & Delete runs
+    - Filter runs by type
+        - Easy
+        - Workout
+        - Race
+        - Long Run
+    - Easily navigate to previous training weeks.
 
-### Stack
+#### 2. Training Visualizations
 
-- Frontend: React + TypeScript + Tailwind + Vite
-- Backend: FastAPI + SQLAlchemy + Pydantic v2
-- DB: PostgreSQL
-- Migrations: Alembic
+###### 2.1 Weekly Mileage Trends Graph
+- 12 week, 6 month, or 1 year weekly mileage trends.
+- Line graph showing week to week trends
+- Displays your average weekly mileage for the time range.
 
----
+###### 2.2 Current Week Mileage Graph
+- A bar graph breaking down your daily mileage for the week being currently viewed.
+- Total mileage for the week displayed.
 
-## Quick start
+## Tech
 
-### Backend
-
-1) Create a venv and install deps
-
-```bash
-cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-2) Configure environment
-
-Copy `.env.example` to `.env` and adjust if needed.
-
-Important settings:
-
-- `DATABASE_URL` – Postgres DSN
-- `TIMEZONE` – IANA tz (e.g. `America/New_York`) or `local`
-- `AGE` / `HR_MAX` – used to compute HR zones (if `HR_MAX` missing, uses `220 - AGE`)
-
-3) Init DB and run the server
-
-```bash
-alembic upgrade head
-uvicorn app.main:app --reload
-```
+This is a lightweight, modern stack focused on fast local iteration and clear data flow from files/Strava → processing → charts.
 
 ### Frontend
+- React + TypeScript + Vite
+  - Vite for instant dev reload and small production bundles.
+- Styling: Tailwind CSS utility classes (see `frontend/tailwind.config.js` and `src/index.css`).
+- Charts: Recharts
+  - Weekly mileage line/bar charts and distance‑indexed overlays (pace/HR vs elevation).
+- Map: React‑Leaflet + Leaflet
+  - Dark Carto basemap, route glow stroke, start/finish markers.
+  - Distance bounds are computed on the backend and fit in the map on load.
+- API client: thin fetch wrappers in `src/api.ts`
+  - Environment aware: uses `VITE_API_URL` when set or defaults to `same-host:8000` (handy for Docker Compose).
+  - Simple typed DTOs for runs, splits, metrics, series, and Strava helpers.
 
-```bash
-cd frontend
-npm i
-# if using the map view
-npm i react-leaflet leaflet
-npm run dev
-```
+### Backend
+- FastAPI (Python)
+  - Clear, typed routes under `app/api/` (`runs`, `strava`, `goals`).
+- Data modelling: SQLAlchemy ORM (`app/models/*`)
+  - Core tables: `runs`, `run_files`, `run_track`, `run_splits`, `run_metrics`, `weekly_goal`.
+  - Migrations via Alembic (see `alembic/` and `alembic/env.py`).
+- Schemas: Pydantic v2
+  - `RunCreate/RunRead/RunUpdate`, `WeeklyMileagePoint`, with lenient update handling.
+- Processing pipeline
+  - Import endpoints accept `.fit` (fitparse), `.gpx` (gpxpy), and `.tcx` (basic XML).
+  - Builds: route GeoJSON + bounds, per‑mile splits (moving time or FIT laps), elevation metrics, downsampled time series.
+  - Distance‑indexed series for charts: `hr_dist_series`, `pace_dist_series`, `elev_dist_series` (~0.1 mi sampling).
+  - Heart‑rate zones computed with HR_MAX or 220 − AGE; available for FIT and Strava imports.
+- Strava integration (`app/api/strava.py`)
+  - OAuth link: `GET /strava/auth_url`, callback saves tokens under `uploads/strava/tokens.json`.
+  - Sync: `POST /strava/sync` pulls activities via streams (lat/lng, altitude, heartrate, speed) and builds the same artifacts as file import.
+  - Status: `GET /strava/status` indicates if tokens are present.
+- Config & env
+  - `app/core/config.py` (pydantic‑settings): `DATABASE_URL`, `TIMEZONE`, `AGE`, optional `HR_MAX`, uploads dir, and Strava client envs.
+  - Reasonable defaults for local dev and Docker.
 
-By default the backend runs on `http://127.0.0.1:8000` and the frontend on `http://127.0.0.1:5173`.
+### Database
+- PostgreSQL in development and production.
+- For tests we use SQLite in‑memory via `DATABASE_URL=sqlite+pysqlite:///:memory:` to keep smoke tests fast.
 
----
+### Packaging / Deploy
+- Docker images for backend (Uvicorn) and frontend (Nginx serving Vite build).
+- Docker Compose orchestrates:
+  - Postgres with a named volume.
+  - Backend with `/app/uploads` volume (persists imported files + Strava tokens).
+  - Frontend built with `VITE_API_URL` passed in, or defaults to same‑host backend.
+- See `docs/DEPLOY.md` for detailed steps and Strava one‑time linking instructions.
 
-## Key directories
-
-- `backend/app/api/` – FastAPI routers (runs, goals)
-- `backend/app/models/` – SQLAlchemy models (Run, RunFile, RunMetrics, RunSplit, RunTrack, WeeklyGoal)
-- `backend/app/schemas/` – Pydantic request/response models
-- `backend/app/core/` – configuration + time utilities
-- `backend/alembic/` – migrations
-- `frontend/src/` – React app
-  - `components/RunMap.tsx` – Leaflet map for the route
-  - `App.tsx` – dashboard + details UI
-
----
-
-## Importing activities
-
-Use the “Import GPX/FIT” button in the weekly header.
-
-Backend behavior:
-
-- GPX: builds a route LineString, moving‑time mile splits, and elevation metrics
-- FIT: prefers device laps for splits (uses `total_timer_time`), builds HR/pace series and zones
-- Timestamps are converted to `TIMEZONE` for start time + date
-
-Endpoints of interest:
-
-- `POST /runs/import` – accepts `.fit` or `.gpx` and creates a run
-- `GET /runs/{id}/track` – GeoJSON + bounds for map
-- `GET /runs/{id}/splits` – mile splits
-- `GET /runs/{id}/metrics` – elevation, moving time, HR zones
-- `GET /runs/{id}/series` – HR + pace time series (downsampled)
-
----
-
-## Developer docs
-
-See `docs/ARCHITECTURE.md` for a deeper overview and `docs/API.md` for endpoint details.
-
-Deployment quickstart: see `docs/DEPLOY.md` (backend env, running uvicorn, building the frontend, and optional Strava linking/sync commands).
-
-Strava import:
-
-- Link account: `GET /strava/auth_url` → open the URL and approve. Tokens are saved under `uploads/strava/tokens.json`.
-- Sync last 12 weeks: `POST /strava/sync?weeks=12`
-- Sync a date window in pages of 50: `POST /strava/sync?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&types=Run&max_activities=50&start_page=1`
-
-### Code style and notes
-
-- Pydantic v2 is used (`model_config=from_attributes=True`)
-- Splits use moving time only (stop time excluded)
-- FIT laps are used when present for more accurate per‑mile pacing
-- Leaflet dark tiles provide a modern map look; the route is layered for a neon glow
-
----
-
-## Roadmap
-
-- Workout/interval laps view (from FIT lap messages)
-- Pace‑colored route
-- Reprocess an activity from stored files (without re‑upload)
-- Optional Garmin API integration (webhook ingestion)
+### Testing (minimal)
+- Backend: `backend/tests/test_api_smoke.py`
+  - Exercises `/` and a simple create/list run cycle with in‑memory SQLite.
+- Frontend: Node’s built‑in `node:test` runner for pure utility functions in `src/lib/format.ts`.
+  - Run with `npm run test` in `frontend/`.
