@@ -13,6 +13,9 @@ resource "aws_ecs_cluster" "this" {
     ManagedBy   = "terraform"
   }
 }
+locals {
+  database_url = "postgresql+psycopg2://${var.db_username}:${var.db_password}@${aws_db_instance.runner.address}:${var.db_port}/${var.db_name}"
+}
 
 resource "aws_ecs_task_definition" "backend" {
   family                   = "${var.project_name}-${var.environment}-backend"
@@ -45,7 +48,7 @@ resource "aws_ecs_task_definition" "backend" {
         # TODO: point this at real RDS/DB later
         {
           name  = "DATABASE_URL"
-          value = var.database_url
+          value = local.database_url
         }
       ]
 
@@ -69,9 +72,9 @@ resource "aws_ecs_service" "backend" {
   desired_count   = 1
 
   network_configuration {
-    subnets          = aws_subnet.private.*.id
+    subnets          = aws_subnet.public.*.id
     security_groups  = [aws_security_group.backend.id]
-    assign_public_ip = false
+    assign_public_ip = true
   }
 
   load_balancer {
