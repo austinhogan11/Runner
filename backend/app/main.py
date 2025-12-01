@@ -23,6 +23,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 # Create DB tables (runs, etc.) on startup
 Base.metadata.create_all(bind=engine)
 
