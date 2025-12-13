@@ -48,3 +48,9 @@ frontend/.env
 *.tfstate.backup
 crash.log
 infra/aws/eks/terraform.tfvars
+
+data/uploads/
+**/tokens.json
+**/*token*
+**/*secret*
+.env
