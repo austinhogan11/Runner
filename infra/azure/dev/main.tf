@@ -57,7 +57,7 @@ resource "azurerm_kubernetes_cluster" "runner" {
   default_node_pool {
     name           = "system"
     node_count     = 1
-    vm_size = var.aks_node_vm_size
+    vm_size        = var.aks_node_vm_size
     vnet_subnet_id = azurerm_subnet.aks.id
   }
 

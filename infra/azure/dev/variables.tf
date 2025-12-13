@@ -27,5 +27,5 @@ variable "tags" {
 variable "aks_node_vm_size" {
   type        = string
   description = "AKS node pool VM size"
-  default     = "Standard_DS2_v2"
+  default     = "standard_dc2s_v3"
 }
