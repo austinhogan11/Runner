@@ -4,14 +4,17 @@ kind: Ingress
 metadata:
   name: runner
   annotations:
-    kubernetes.io/ingress.class: {{ .Values.ingress.className | quote }}
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: "/$2"
 spec:
+  ingressClassName: {{ .Values.ingress.className | quote }}
   rules:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
-          - path: {{ .Values.ingress.pathPrefixApi }}
-            pathType: Prefix
+          # Rewrite /api/<path> -> /<path> for the backend service
+          - path: {{ .Values.ingress.pathPrefixApi }}(/|$)(.*)
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: runner-backend

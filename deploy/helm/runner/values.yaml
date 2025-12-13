@@ -10,7 +10,7 @@ frontend:
   image:
     repository: runneracrdev.azurecr.io/runner-frontend
     tag: latest
-  port: 3000
+  port: 80
 
 service:
   type: ClusterIP

@@ -20,6 +20,11 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: {{ .Values.backend.port }}
+          env:
+            - name: RUN_MIGRATIONS
+              value: "true"
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://postgres:postgres@runner-postgres-postgresql.runner.svc.cluster.local:5432/runner"
           readinessProbe:
             tcpSocket:
               port: {{ .Values.backend.port }}
