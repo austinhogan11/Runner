@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: runner-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: runner-backend
+  ports:
+    - port: 8000
+      targetPort: {{ .Values.backend.port }}
+      protocol: TCP

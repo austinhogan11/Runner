@@ -47,3 +47,4 @@ frontend/.env
 *.tfstate
 *.tfstate.backup
 crash.log
+infra/aws/eks/terraform.tfvars

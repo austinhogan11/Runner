@@ -18,7 +18,7 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: DockerFile
+      dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg2://runner:runner@db:5432/runner
       TIMEZONE: ${TIMEZONE:-America/New_York}

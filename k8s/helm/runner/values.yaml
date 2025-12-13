@@ -1,0 +1,44 @@
+namespace: runner
+
+image:
+  backend:
+    repository: "<your-backend-ecr-repo>"   # e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/runner-backend
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  frontend:
+    repository: "<your-frontend-ecr-repo>"
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+backend:
+  port: 8000
+  env:
+    # We’ll probably only need DATABASE_URL later,
+    # but we’ll keep this for misc envs.
+    extra: {}
+
+frontend:
+  port: 80
+  env:
+    # front-end doesn’t need runtime envs right now
+    extra: {}
+
+ingress:
+  enabled: true
+  host: "runner.your-domain.com"
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    # If you use HTTPS with ACM, you'll add:
+    # alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:region:account:certificate/..."
+  tls:
+    enabled: false
+    # secretName: "runner-tls"   # if you terminate TLS in the cluster
+
+replicaCount:
+  backend: 2
+  frontend: 2
+
+database:
+  url: "postgresql://user:pass@db-host:5432/runner"

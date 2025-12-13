@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: runner
+  namespace: argocd      # Argo CD itself runs in this namespace
+spec:
+  project: default
+  source:
+    repoURL: "git@github.com:austinhogan11/Runner.git"
+    targetRevision: HEAD
+    path: k8s/helm/runner
+    helm:
+      valueFiles:
+        - values.yaml
+        # later you can add:
+        # - values-dev.yaml
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: runner
+  syncPolicy:
+    automated:
+      prune: true        # delete resources removed from git
+      selfHeal: true     # fix drift if someone kubectl-ed by hand
+    syncOptions:
+      - CreateNamespace=true

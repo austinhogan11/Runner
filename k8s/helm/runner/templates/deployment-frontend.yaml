@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runner-frontend
+  labels:
+    app: runner-frontend
+spec:
+  replicas: {{ .Values.replicaCount.frontend | default 2 }}
+  selector:
+    matchLabels:
+      app: runner-frontend
+  template:
+    metadata:
+      labels:
+        app: runner-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: "{{ .Values.image.frontend.repository }}:{{ .Values.image.frontend.tag }}"
+          imagePullPolicy: {{ .Values.image.frontend.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.frontend.port }}
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
