@@ -5,6 +5,21 @@ backend:
     tag: latest
   port: 8000
 
+  env:
+    databaseUrl: "postgresql://postgres:postgres@runner-postgres-postgresql.runner.svc.cluster.local:5432/runner"
+    runMigrations: true
+
+  probes:
+    healthPath: /api/health
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+    
 frontend:
   replicaCount: 1
   image:
@@ -19,5 +34,5 @@ ingress:
   enabled: true
   className: nginx
   host: runner.local
-  pathPrefixApi: /api
-  pathPrefixWeb: /
+  pathPrefixApi: /api(/|$)(.*)
+  pathPrefixWeb: /</file>

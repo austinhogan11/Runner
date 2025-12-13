@@ -12,15 +12,14 @@ spec:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
-          # Rewrite /api/<path> -> /<path> for the backend service
-          - path: {{ .Values.ingress.pathPrefixApi }}(/|$)(.*)
+          - path: {{ .Values.ingress.pathPrefixApi | quote }}   # e.g. /api(/|$)(.*)
             pathType: ImplementationSpecific
             backend:
               service:
                 name: runner-backend
                 port:
                   number: 80
-          - path: {{ .Values.ingress.pathPrefixWeb }}
+          - path: {{ .Values.ingress.pathPrefixWeb | quote }}   # e.g. /
             pathType: Prefix
             backend:
               service:

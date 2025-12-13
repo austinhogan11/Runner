@@ -14,6 +14,10 @@ spec:
       labels:
         app: runner-backend
     spec:
+      {{- if .Values.imagePullSecret.name }}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret.name | quote }}
+      {{- end }}
       containers:
         - name: backend
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
@@ -22,16 +26,31 @@ spec:
             - containerPort: {{ .Values.backend.port }}
           env:
             - name: RUN_MIGRATIONS
-              value: "true"
+              value: {{ .Values.backend.env.runMigrations | default true | quote }}
             - name: DATABASE_URL
-              value: "postgresql+psycopg2://postgres:postgres@runner-postgres-postgresql.runner.svc.cluster.local:5432/runner"
+              value: {{ required "backend.env.databaseUrl is required" .Values.backend.env.databaseUrl | quote }}
+            - name: PORT
+              value: {{ .Values.backend.port | quote }}
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: {{ .Values.backend.probes.readinessPath | default "/api/health" | quote }}
               port: {{ .Values.backend.port }}
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: {{ .Values.backend.probes.readinessInitialDelaySeconds | default 5 }}
+            periodSeconds: {{ .Values.backend.probes.readinessPeriodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.backend.probes.readinessTimeoutSeconds | default 2 }}
+            failureThreshold: {{ .Values.backend.probes.readinessFailureThreshold | default 3 }}
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: {{ .Values.backend.probes.livenessPath | default "/api/health" | quote }}
               port: {{ .Values.backend.port }}
-            initialDelaySeconds: 15
-            periodSeconds: 20
+            initialDelaySeconds: {{ .Values.backend.probes.livenessInitialDelaySeconds | default 15 }}
+            periodSeconds: {{ .Values.backend.probes.livenessPeriodSeconds | default 20 }}
+            timeoutSeconds: {{ .Values.backend.probes.livenessTimeoutSeconds | default 2 }}
+            failureThreshold: {{ .Values.backend.probes.livenessFailureThreshold | default 3 }}
+          resources:
+            requests:
+              cpu: {{ .Values.backend.resources.requests.cpu | default "100m" | quote }}
+              memory: {{ .Values.backend.resources.requests.memory | default "128Mi" | quote }}
+            limits:
+              cpu: {{ .Values.backend.resources.limits.cpu | default "500m" | quote }}
+              memory: {{ .Values.backend.resources.limits.memory | default "512Mi" | quote }}

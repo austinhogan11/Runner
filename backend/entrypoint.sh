@@ -1,12 +1,10 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 set -e
 
-if [ "$RUN_MIGRATIONS" = "true" ]; then
-  echo "Applying database migrations..."
+if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
+  echo "🔧 Applying database migrations..."
   alembic upgrade head
-else
-  echo "⏭Skipping database migrations (RUN_MIGRATIONS=$RUN_MIGRATIONS)"
 fi
 
-echo "Starting backend..."
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+echo "🚀 Starting API..."
+exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"
