@@ -56,8 +56,8 @@ resource "azurerm_kubernetes_cluster" "runner" {
 
   default_node_pool {
     name           = "system"
-    node_count     = 2
-    vm_size        = "Standard_B2s"
+    node_count     = 1
+    vm_size = var.aks_node_vm_size
     vnet_subnet_id = azurerm_subnet.aks.id
   }
 
@@ -72,8 +72,8 @@ resource "azurerm_kubernetes_cluster" "runner" {
   tags = merge(var.tags, { env = var.environment })
 }
 
-resource "azurerm_role_assignment" "aks_acr_pull" {
-  scope                = azurerm_container_registry.runner.id
-  role_definition_name = "AcrPull"
-  principal_id         = azurerm_kubernetes_cluster.runner.kubelet_identity[0].object_id
-}
+# resource "azurerm_role_assignment" "aks_acr_pull" {
+#   scope                = azurerm_container_registry.runner.id
+#   role_definition_name = "AcrPull"
+#   principal_id         = azurerm_kubernetes_cluster.runner.kubelet_identity[0].object_id
+# }

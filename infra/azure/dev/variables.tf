@@ -23,3 +23,9 @@ variable "tags" {
     app = "runner"
   }
 }
+
+variable "aks_node_vm_size" {
+  type        = string
+  description = "AKS node pool VM size"
+  default     = "Standard_DS2_v2"
+}
