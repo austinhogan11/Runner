@@ -1,0 +1,23 @@
+backend:
+  replicaCount: 1
+  image:
+    repository: runneracrdev.azurecr.io/runner-backend
+    tag: latest
+  port: 8000
+
+frontend:
+  replicaCount: 1
+  image:
+    repository: runneracrdev.azurecr.io/runner-frontend
+    tag: latest
+  port: 3000
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: true
+  className: nginx
+  host: runner.local
+  pathPrefixApi: /api
+  pathPrefixWeb: /
