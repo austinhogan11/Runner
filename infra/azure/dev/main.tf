@@ -46,23 +46,6 @@ resource "azurerm_subnet" "aks" {
   address_prefixes     = ["10.10.1.0/24"]
 }
 
-# Subnet dedicated to Postgres Flexible Server (delegated)
-resource "azurerm_subnet" "postgres" {
-  name                 = "postgres-subnet-${var.environment}"
-  resource_group_name  = azurerm_resource_group.runner.name
-  virtual_network_name = azurerm_virtual_network.runner.name
-  address_prefixes     = ["10.10.2.0/24"]
-
-  delegation {
-    name = "postgres-flexible-delegation"
-
-    service_delegation {
-      name    = "Microsoft.DBforPostgreSQL/flexibleServers"
-      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
-    }
-  }
-}
-
 resource "azurerm_kubernetes_cluster" "runner" {
   name                = "runner-aks-${var.environment}"
   location            = azurerm_resource_group.runner.location
@@ -111,41 +94,38 @@ resource "random_password" "postgres" {
 }
 
 # Private DNS zone for Postgres private access
-resource "azurerm_private_dns_zone" "postgres" {
-  name                = "privatelink.postgres.database.azure.com"
-  resource_group_name = azurerm_resource_group.runner.name
+locals {
+  postgres_name = "runner-pg-${var.environment}"
 }
 
-resource "azurerm_private_dns_zone_virtual_network_link" "postgres" {
-  name                  = "runner-postgres-dnslink-${var.environment}"
-  resource_group_name   = azurerm_resource_group.runner.name
-  private_dns_zone_name = azurerm_private_dns_zone.postgres.name
-  virtual_network_id    = azurerm_virtual_network.runner.id
+resource "random_password" "postgres" {
+  length  = 24
+  special = true
 }
 
+# Public Postgres (Option A - default)
 resource "azurerm_postgresql_flexible_server" "runner" {
-  name                   = "runner-pg-${var.environment}"
+  name                   = local.postgres_name
   resource_group_name    = azurerm_resource_group.runner.name
-  location               = azurerm_resource_group.runner.location
+  location               = var.postgres_location
 
   administrator_login    = var.postgres_admin_user
   administrator_password = random_password.postgres.result
 
   version                = var.postgres_version
   sku_name               = var.postgres_sku_name
-
   storage_mb             = var.postgres_storage_mb
 
-  delegated_subnet_id    = azurerm_subnet.postgres.id
-  private_dns_zone_id    = azurerm_private_dns_zone.postgres.id
-
-  public_network_access_enabled = false
-
-  depends_on = [
-    azurerm_private_dns_zone_virtual_network_link.postgres
-  ]
+  public_network_access_enabled = true
 
   tags = merge(var.tags, { env = var.environment })
+}
+
+resource "azurerm_postgresql_flexible_server_firewall_rule" "all" {
+  name             = "allow-all-smoke"
+  server_id        = azurerm_postgresql_flexible_server.runner.id
+  start_ip_address = var.postgres_firewall_start_ip
+  end_ip_address   = var.postgres_firewall_end_ip
 }
 
 resource "azurerm_postgresql_flexible_server_database" "runner" {
