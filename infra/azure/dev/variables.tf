@@ -27,29 +27,17 @@ variable "tags" {
 variable "aks_node_vm_size" {
   type        = string
   description = "AKS node pool VM size"
-  default     = "standard_dc2s_v3"
+  default     = "Standard_D2s_v3"
 }
 
-variable "postgres_admin_user" {
-  type        = string
-  description = "Postgres admin username"
-  default     = "runneradmin"
+variable "aks_node_count" {
+  type        = number
+  description = "AKS default node count"
+  default     = 1
 }
 
-variable "postgres_sku_name" {
+variable "acr_sku" {
   type        = string
-  description = "Flexible server SKU"
-  default     = "B_Standard_B1ms"
-}
-
-variable "postgres_version" {
-  type        = string
-  description = "Postgres major version"
-  default     = "16"
-}
-
-variable "postgres_db_name" {
-  type        = string
-  description = "App database name"
-  default     = "runner"
+  description = "Azure Container Registry SKU"
+  default     = "Basic"
 }
