@@ -88,12 +88,7 @@ resource "azurerm_role_assignment" "aks_acr_pull" {
   ]
 }
 
-resource "random_password" "postgres" {
-  length  = 24
-  special = true
-}
-
-# Private DNS zone for Postgres private access
+# Postgres settings
 locals {
   postgres_name = "runner-pg-${var.environment}"
 }
