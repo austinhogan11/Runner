@@ -6,10 +6,17 @@ backend:
   port: 8000
 
   env:
-    databaseUrl: "postgresql://postgres:postgres@runner-postgres-postgresql.runner.svc.cluster.local:5432/runner"
+    # NOTE:
+    # - For Azure Database for PostgreSQL (Flexible Server), SSL is required -> sslmode=require
+    # - Replace runner-pg-dev with your actual server name if different.
+    # - Best practice: inject the password via CI/Argo secret (not hardcoded here).
+    databaseUrl: "postgresql://runneradmin:CHANGE_ME@runner-pg-dev.postgres.database.azure.com:5432/runner?sslmode=require"
     runMigrations: true
 
   probes:
+    # your ingress routes /api to backend; app health endpoint should be /api/health externally,
+    # but internally the container likely serves /health (depends on your FastAPI routes).
+    # If your app route is actually /api/health inside the backend, keep this.
     healthPath: /api/health
 
   resources:
@@ -19,7 +26,7 @@ backend:
     limits:
       cpu: "500m"
       memory: "512Mi"
-    
+
 frontend:
   replicaCount: 1
   image:
@@ -35,4 +42,7 @@ ingress:
   className: nginx
   host: runner.local
   pathPrefixApi: /api(/|$)(.*)
-  pathPrefixWeb: /</file>
+  pathPrefixWeb: /
+
+imagePullSecret:
+  name: ""

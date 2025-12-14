@@ -14,14 +14,15 @@ spec:
       labels:
         app: runner-backend
     spec:
-      {{- if .Values.imagePullSecret.name }}
+      {{- $ips := default (dict "name" "") .Values.imagePullSecret }}
+      {{- if $ips.name }}
       imagePullSecrets:
-        - name: {{ .Values.imagePullSecret.name | quote }}
+        - name: {{ $ips.name | quote }}
       {{- end }}
       containers:
         - name: backend
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy | default "Always" | quote }}
           ports:
             - containerPort: {{ .Values.backend.port }}
           env:
