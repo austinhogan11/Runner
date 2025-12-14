@@ -13,7 +13,7 @@ resource "azurerm_container_registry" "runner" {
   location            = azurerm_resource_group.runner.location
 
   sku           = "Basic"
-  admin_enabled = false
+  admin_enabled = True
 
   tags = merge(var.tags, {
     env = var.environment
