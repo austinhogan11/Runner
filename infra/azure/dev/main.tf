@@ -88,9 +88,15 @@ resource "azurerm_role_assignment" "aks_acr_pull" {
   ]
 }
 
+resource "random_string" "pg_suffix" {
+  length  = 4
+  upper   = false
+  special = false
+}
+
 # Postgres settings
 locals {
-  postgres_name = "runner-pg-${var.environment}"
+  postgres_name = "runner-pg-${var.environment}-${random_string.pg_suffix.result}"
 }
 
 resource "random_password" "postgres" {
