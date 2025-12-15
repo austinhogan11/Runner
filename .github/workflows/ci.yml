@@ -1,0 +1,114 @@
+name: CI Build and Deploy (dev)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'projects/Runner/backend/**'
+      - 'projects/Runner/frontend/**'
+      - 'projects/Runner/deploy/helm/runner/**'
+      - 'projects/Runner/.github/workflows/ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'projects/Runner/backend/**'
+      - 'projects/Runner/frontend/**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+
+jobs:
+  build:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [ backend, frontend ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Extract ACR name
+        id: acr
+        shell: bash
+        run: |
+          # ACR_LOGIN_SERVER like runneracrdev.azurecr.io -> name before first dot
+          echo "name=${ACR_LOGIN_SERVER%%.azurecr.io}" >> "$GITHUB_OUTPUT"
+
+      - name: ACR login via az
+        run: az acr login --name ${{ steps.acr.outputs.name }}
+
+      - name: Set build context
+        id: ctx
+        shell: bash
+        run: |
+          if [[ "${{ matrix.component }}" == "backend" ]]; then
+            echo "context=projects/Runner/backend" >> $GITHUB_OUTPUT
+            echo "dockerfile=projects/Runner/backend/Dockerfile" >> $GITHUB_OUTPUT
+            echo "buildargs=" >> $GITHUB_OUTPUT
+          else
+            echo "context=projects/Runner/frontend" >> $GITHUB_OUTPUT
+            echo "dockerfile=projects/Runner/frontend/Dockerfile" >> $GITHUB_OUTPUT
+            # Ensure /api base baked into the SPA
+            echo "buildargs=--build-arg VITE_API_URL=/api" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push image
+        shell: bash
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          IMAGE="${ACR_LOGIN_SERVER}/runner-${{ matrix.component }}"
+          # Build
+          docker build ${{ steps.ctx.outputs.buildargs }} \
+            -f ${{ steps.ctx.outputs.dockerfile }} \
+            -t "$IMAGE:${GITHUB_SHA}" \
+            -t "$IMAGE:dev" \
+            ${{ steps.ctx.outputs.context }}
+          # Push on push to main; for PRs, build only
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            docker push "$IMAGE:${GITHUB_SHA}"
+            docker push "$IMAGE:dev"
+          fi
+
+  bump-values:
+    name: Bump Helm values to new image tags
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install yq
+        shell: bash
+        run: |
+          YQ_VER=v4.44.3
+          sudo curl -sSL -o /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VER}/yq_linux_amd64"
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Update values-dev.yaml image tags
+        env:
+          NEW_TAG: ${{ github.sha }}
+        run: |
+          FILE=projects/Runner/deploy/helm/runner/values-dev.yaml
+          yq -i '.backend.image.tag = strenv(NEW_TAG)' "$FILE"
+          yq -i '.frontend.image.tag = strenv(NEW_TAG)' "$FILE"
+          echo "Updated image tags to ${NEW_TAG} in $FILE"
+
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "ci: bump dev image tags to ${{ github.sha }}"
+          file_pattern: projects/Runner/deploy/helm/runner/values-dev.yaml
+

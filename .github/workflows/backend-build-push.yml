@@ -1,4 +1,4 @@
-name: Backend Build & Deploy (dev)
+name: Backend Build & Push (Azure ACR)
 
 on:
   workflow_dispatch:
@@ -8,38 +8,45 @@ on:
       - 'backend/**'
       - '.github/workflows/backend-build-push.yml'
 
-jobs:
-  build_and_deploy:
-    runs-on: ubuntu-latest
-    env:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      ECR_REPOSITORY: ${{ secrets.BACKEND_ECR_REPO }} # e.g. 3272...dkr.ecr.us-east-1.amazonaws.com/chsn-runner-backend
+permissions:
+  id-token: write
+  contents: write
 
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Login to Amazon ECR
-        id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build and push image
+      - name: ACR login
         run: |
-          IMAGE_TAG=${GITHUB_SHA::7}
-          docker build -t $ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REPOSITORY:latest ./backend
-          docker push $ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REPOSITORY:latest
+          set -euo pipefail
+          if [[ -z "${ACR_LOGIN_SERVER}" ]]; then
+            echo "ACR_LOGIN_SERVER secret is not set" >&2
+            exit 1
+          fi
+          az acr login --name "${ACR_LOGIN_SERVER%%.*}"
 
-      - name: Force new ECS deployment
+      - name: Build and push backend image
         run: |
-          aws ecs update-service \
-            --cluster "${{ secrets.ECS_CLUSTER_NAME }}" \
-            --service "${{ secrets.ECS_SERVICE_NAME }}" \
-            --force-new-deployment
+          set -euo pipefail
+          docker build --platform linux/amd64 \
+            -t "${ACR_LOGIN_SERVER}/runner-backend:${IMAGE_TAG}" \
+            ./backend
+          docker push "${ACR_LOGIN_SERVER}/runner-backend:${IMAGE_TAG}"
+
+      # Optional: update Helm dev values here as well. Prefer the unified
+      # workflow at .github/workflows/build-and-push.yaml that bumps both
+      # backend and frontend tags and commits the change.
