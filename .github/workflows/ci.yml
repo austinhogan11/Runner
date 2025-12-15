@@ -16,6 +16,7 @@ on:
   workflow_dispatch: {}
 
 permissions:
+  id-token: write
   contents: write
 
 env:
@@ -39,12 +40,23 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Extract ACR name
+      - name: Normalize ACR login server and extract name
         id: acr
         shell: bash
         run: |
-          # ACR_LOGIN_SERVER like runneracrdev.azurecr.io -> name before first dot
-          echo "name=${ACR_LOGIN_SERVER%%.azurecr.io}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [[ -z "${ACR_LOGIN_SERVER:-}" ]]; then
+            echo "ACR_LOGIN_SERVER secret is not set. Add repo secret ACR_LOGIN_SERVER (e.g., runneracrdev.azurecr.io)." >&2
+            exit 1
+          fi
+          LS="$ACR_LOGIN_SERVER"
+          # Allow either 'runneracrdev' or 'runneracrdev.azurecr.io'
+          if [[ "$LS" != *.* ]]; then
+            LS="${LS}.azurecr.io"
+          fi
+          NAME="${LS%%.azurecr.io}"
+          echo "loginServer=${LS}" >> "$GITHUB_OUTPUT"
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
 
       - name: ACR login via az
         run: az acr login --name ${{ steps.acr.outputs.name }}
@@ -68,7 +80,7 @@ jobs:
         shell: bash
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
-          IMAGE="${ACR_LOGIN_SERVER}/runner-${{ matrix.component }}"
+          IMAGE="${{ steps.acr.outputs.loginServer }}/runner-${{ matrix.component }}"
           # Build
           docker build ${{ steps.ctx.outputs.buildargs }} \
             -f ${{ steps.ctx.outputs.dockerfile }} \
@@ -111,4 +123,3 @@ jobs:
         with:
           commit_message: "ci: bump dev image tags to ${{ github.sha }}"
           file_pattern: projects/Runner/deploy/helm/runner/values-dev.yaml
-
