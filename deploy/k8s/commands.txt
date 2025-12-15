@@ -1,0 +1,5 @@
+kubectl create ns runner --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f projects/Runner/deploy/k8s/runner-frontend.yaml
+kubectl -n runner rollout status deploy/runner-frontend
+kubectl -n runner get svc runner-frontend
+kubectl -n runner port-forward svc/runner-frontend 8081:80

@@ -1,0 +1,72 @@
+{{- if .Values.ingress.enabled }}
+{{- $ing := .Values.ingress | default (dict) -}}
+{{- $tls := $ing.tls | default (dict) -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "runner.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "runner.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if $ing.className }}
+  ingressClassName: {{ $ing.className }}
+  {{- end }}
+  {{- if and $tls.enabled $ing.host }}
+  tls:
+    - hosts:
+        - {{ $ing.host }}
+      secretName: {{ $tls.secretName }}
+  {{- end }}
+  rules:
+    - {{- if $ing.host }}
+      host: {{ $ing.host }}
+      {{- end }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "runner.fullname" . }}-frontend
+                port:
+                  number: {{ .Values.frontend.service.port }}
+{{- end }}
+
+---
+
+{{- $api := .Values.apiIngress | default (dict) -}}
+{{- if and .Values.ingress.enabled (default false $api.enabled) }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "runner.fullname" . }}-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "runner.labels" . | nindent 4 }}
+  {{- with $api.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if $api.className }}
+  ingressClassName: {{ $api.className }}
+  {{- end }}
+  rules:
+    - {{- if $api.host }}
+      host: {{ $api.host }}
+      {{- end }}
+      http:
+        paths:
+          - path: {{ $api.path | default "/api(/|$)(.*)" }}
+            pathType: {{ $api.pathType | default "ImplementationSpecific" }}
+            backend:
+              service:
+                name: {{ include "runner.fullname" . }}-backend
+                port:
+                  number: {{ .Values.backend.service.port }}
+{{- end }}

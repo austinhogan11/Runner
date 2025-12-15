@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "runner.fullname" . }}-backend
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "runner.labels" . | nindent 4 }}
+    app: runner-backend
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  selector:
+    matchLabels:
+      app: runner-backend
+  template:
+    metadata:
+      labels:
+        app: runner-backend
+        {{- include "runner.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.backend.service.targetPort }}
+          {{- if .Values.backend.probes.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.backend.probes.path }}
+              port: {{ .Values.backend.service.targetPort }}
+            initialDelaySeconds: {{ .Values.backend.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.backend.probes.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.backend.probes.path }}
+              port: {{ .Values.backend.service.targetPort }}
+            initialDelaySeconds: {{ .Values.backend.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.backend.probes.periodSeconds }}
+          {{- end }}
+          # Env vars (single list); add PG* when auto compose is enabled
+          env:
+            - name: RUN_MIGRATIONS
+              value: {{ .Values.backend.env.RUN_MIGRATIONS | quote }}
+            {{- range .Values.backend.extraEnv }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- if .Values.backend.autoDbFromBitnami.enabled }}
+            - name: PGHOST
+              value: {{ .Values.backend.autoDbFromBitnami.host | quote }}
+            - name: PGPORT
+              value: {{ .Values.backend.autoDbFromBitnami.port | quote }}
+            - name: PGDATABASE
+              value: {{ .Values.backend.autoDbFromBitnami.database | quote }}
+            - name: PGUSER
+              value: {{ .Values.backend.autoDbFromBitnami.user | quote }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.autoDbFromBitnami.secretName }}
+                  key: {{ .Values.backend.autoDbFromBitnami.passwordKey }}
+            {{- end }}
+
+          {{- if .Values.backend.autoDbFromBitnami.enabled }}
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}?sslmode=disable";
+              exec ./entrypoint.sh
+          {{- end }}
+
+          {{- if .Values.backend.databaseUrl }}
+          envFrom:
+            - secretRef:
+                name: {{ include "runner.fullname" . }}-backend-env
+          {{- end }}

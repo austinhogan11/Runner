@@ -3,6 +3,29 @@
 const DEFAULT_API = `${window.location.protocol}//${window.location.hostname}:8000`;
 export const API_URL = (import.meta as any).env?.VITE_API_URL || DEFAULT_API;
 
+// Build absolute URLs even when API_URL is relative (e.g., "/api")
+function isAbsoluteUrl(u: string): boolean {
+  return /^https?:\/\//i.test(u);
+}
+
+function normalizeBase(base: string): string {
+  if (isAbsoluteUrl(base)) return base.replace(/\/+$/, "");
+  const rel = base.startsWith("/") ? base : `/${base}`;
+  return `${window.location.origin}${rel}`.replace(/\/+$/, "");
+}
+
+function buildUrl(path: string, params?: Record<string, string | number | undefined | null>): URL {
+  const base = normalizeBase(API_URL);
+  const cleaned = path.replace(/^\/+/, "");
+  const url = new URL(cleaned, `${base}/`);
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+    }
+  }
+  return url;
+}
+
 // -------- Types -------- //
 export interface WeeklyMileagePoint {
   week_start: string;
@@ -76,9 +99,7 @@ export interface RunCreate {
 export async function getWeeklyMileage(
   maxWeeks: number = 52
 ): Promise<WeeklyMileagePoint[]> {
-  const url = new URL(`${API_URL}/runs/weekly_mileage`);
-  url.searchParams.set("weeks", String(maxWeeks));
-
+  const url = buildUrl("runs/weekly_mileage", { weeks: maxWeeks });
   const res = await fetch(url.toString());
   if (!res.ok) {
     throw new Error("Failed to fetch weekly mileage");
@@ -91,14 +112,13 @@ export async function getRunsInRange(
   end: string,
   opts?: { run_type?: string }
 ): Promise<Run[]> {
-  const url = new URL(`${API_URL}/runs/`);
-  url.searchParams.set("start_date", start);
-  url.searchParams.set("end_date", end);
-  if (opts?.run_type && opts.run_type !== "all") {
-    url.searchParams.set("run_type", opts.run_type);
-  }
+  const url = buildUrl("runs/", {
+    start_date: start,
+    end_date: end,
+    run_type: opts?.run_type && opts.run_type !== "all" ? opts.run_type : undefined,
+  });
 
-  const res = await fetch(url);
+  const res = await fetch(url.toString());
   if (!res.ok) {
     throw new Error("Failed to fetch runs");
   }
@@ -106,7 +126,7 @@ export async function getRunsInRange(
 }
 
 export async function createRun(payload: RunCreate): Promise<Run> {
-  const res = await fetch(`${API_URL}/runs/`, {
+  const res = await fetch(buildUrl("runs/").toString(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -123,14 +143,14 @@ export async function createRun(payload: RunCreate): Promise<Run> {
 
 // ------- Goals API ------- //
 export async function getWeeklyGoal(weekStart: string): Promise<WeeklyGoal | null> {
-  const res = await fetch(`${API_URL}/goals/${weekStart}`);
+  const res = await fetch(buildUrl(`goals/${weekStart}`).toString());
   if (res.status === 404) return null;
   if (!res.ok) throw new Error("Failed to fetch weekly goal");
   return res.json();
 }
 
 export async function upsertWeeklyGoal(weekStart: string, data: { goal_miles: number; notes?: string }): Promise<WeeklyGoal> {
-  const res = await fetch(`${API_URL}/goals/${weekStart}`, {
+  const res = await fetch(buildUrl(`goals/${weekStart}`).toString(), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -140,7 +160,7 @@ export async function upsertWeeklyGoal(weekStart: string, data: { goal_miles: nu
 }
 
 export async function updateRun(id: number, data: Partial<Run>): Promise<Run> {
-  const res = await fetch(`${API_URL}/runs/${id}`, {
+  const res = await fetch(buildUrl(`runs/${id}`).toString(), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -150,57 +170,57 @@ export async function updateRun(id: number, data: Partial<Run>): Promise<Run> {
 }
 
 export async function deleteRun(id: number): Promise<void> {
-  const res = await fetch(`${API_URL}/runs/${id}`, { method: "DELETE" });
+  const res = await fetch(buildUrl(`runs/${id}`).toString(), { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete run");
 }
 
 export async function importRun(file: File): Promise<Run> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${API_URL}/runs/import`, { method: "POST", body: form });
+  const res = await fetch(buildUrl("runs/import").toString(), { method: "POST", body: form });
   if (!res.ok) throw new Error("Failed to import GPX");
   return res.json();
 }
 
 export async function getRunMetrics(id: number): Promise<RunMetrics> {
-  const res = await fetch(`${API_URL}/runs/${id}/metrics`);
+  const res = await fetch(buildUrl(`runs/${id}/metrics`).toString());
   if (!res.ok) throw new Error("Failed to fetch run metrics");
   return res.json();
 }
 
 export async function getRunSeries(id: number): Promise<RunSeries> {
-  const res = await fetch(`${API_URL}/runs/${id}/series`);
+  const res = await fetch(buildUrl(`runs/${id}/series`).toString());
   if (!res.ok) throw new Error("Failed to fetch run series");
   return res.json();
 }
 
 export async function getRunSplits(id: number): Promise<RunSplit[]> {
-  const res = await fetch(`${API_URL}/runs/${id}/splits`);
+  const res = await fetch(buildUrl(`runs/${id}/splits`).toString());
   if (!res.ok) throw new Error("Failed to fetch splits");
   return res.json();
 }
 
 export async function getRunTrack(id: number): Promise<RunTrack> {
-  const res = await fetch(`${API_URL}/runs/${id}/track`);
+  const res = await fetch(buildUrl(`runs/${id}/track`).toString());
   if (!res.ok) throw new Error("Failed to fetch track");
   return res.json();
 }
 
 export async function reprocessRun(id: number): Promise<{ message: string } & Record<string, any>> {
-  const res = await fetch(`${API_URL}/runs/${id}/reprocess`, { method: "POST" });
+  const res = await fetch(buildUrl(`runs/${id}/reprocess`).toString(), { method: "POST" });
   if (!res.ok) throw new Error("Failed to reprocess run");
   return res.json();
 }
 
 // ------- Strava API helpers ------- //
 export async function getStravaAuthUrl(): Promise<{ url: string }> {
-  const res = await fetch(`${API_URL}/strava/auth_url`);
+  const res = await fetch(buildUrl("strava/auth_url").toString());
   if (!res.ok) throw new Error("Strava client not configured");
   return res.json();
 }
 
 export async function getStravaStatus(): Promise<{ linked: boolean; athlete?: { id?: number; firstname?: string; lastname?: string } }>{
-  const res = await fetch(`${API_URL}/strava/status`);
+  const res = await fetch(buildUrl("strava/status").toString());
   if (!res.ok) throw new Error("Failed to check Strava status");
   return res.json();
 }
@@ -213,13 +233,14 @@ export async function syncStrava(params: {
   end_date?: string;
   start_page?: number;
 } = {}): Promise<{ imported: number; note?: string }> {
-  const url = new URL(`${API_URL}/strava/sync`);
-  if (params.weeks != null) url.searchParams.set("weeks", String(params.weeks));
-  if (params.max_activities != null) url.searchParams.set("max_activities", String(params.max_activities));
-  if (params.types) url.searchParams.set("types", params.types);
-  if (params.start_date) url.searchParams.set("start_date", params.start_date);
-  if (params.end_date) url.searchParams.set("end_date", params.end_date);
-  if (params.start_page != null) url.searchParams.set("start_page", String(params.start_page));
+  const url = buildUrl("strava/sync", {
+    weeks: params.weeks ?? undefined,
+    max_activities: params.max_activities ?? undefined,
+    types: params.types ?? undefined,
+    start_date: params.start_date ?? undefined,
+    end_date: params.end_date ?? undefined,
+    start_page: params.start_page ?? undefined,
+  });
   const res = await fetch(url.toString(), { method: "POST" });
   if (!res.ok) throw new Error("Strava sync failed");
   return res.json();

@@ -1,0 +1,26 @@
+backend:
+  image:
+    repository: runneracrdev.azurecr.io/runner-backend
+    tag: smoke
+  autoDbFromBitnami:
+    enabled: true
+    user: runneradmin
+    database: runner
+    host: runner-pg-postgresql.runner.svc.cluster.local
+    port: 5432
+    secretName: runner-pg-postgresql
+    passwordKey: password
+
+frontend:
+  image:
+    repository: runneracrdev.azurecr.io/runner-frontend
+    tag: smoke-api2
+
+# Expose via Ingress (frontend at "/", backend at "/api" with regex+rewrite)
+ingress:
+  enabled: true
+  className: nginx
+
+apiIngress:
+  enabled: true
+

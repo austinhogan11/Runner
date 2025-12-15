@@ -1,0 +1,32 @@
+# Create/ensure namespace
+kubectl create ns runner --dry-run=client -o yaml | kubectl apply -f -
+
+# Stop any manually-created frontend/backend (keep Bitnami Postgres)
+kubectl -n runner delete deploy runner-backend --ignore-not-found
+kubectl -n runner delete svc runner-backend --ignore-not-found
+kubectl -n runner delete deploy runner-frontend --ignore-not-found
+kubectl -n runner delete svc runner-frontend --ignore-not-found
+kubectl -n runner delete configmap runner-frontend-nginx --ignore-not-found
+
+# Resolve DB URL from the in-cluster Postgres (Bitnami chart)
+export PGPASS=$(kubectl -n runner get secret runner-pg-postgresql -o jsonpath='{.data.password}' | base64 -d)
+export DBURL="postgresql://runneradmin:${PGPASS}@runner-pg-postgresql.runner.svc.cluster.local:5432/runner?sslmode=disable"
+
+# Install/upgrade via Helm (escape/quote array keys for zsh)
+set -o noglob
+helm upgrade --install runner deploy/helm/runner -n runner \
+  --set backend.image.repository=runneracrdev.azurecr.io/runner-backend \
+  --set backend.image.tag=smoke \
+  --set-string 'backend.extraEnv[0].name=DATABASE_URL' \
+  --set-string "backend.extraEnv[0].value=$DBURL" \
+  --set frontend.image.repository=runneracrdev.azurecr.io/runner-frontend \
+  --set frontend.image.tag=smoke-api \
+  --wait
+set +o noglob
+
+# Verify & access
+kubectl -n runner get pods
+kubectl -n runner logs deploy/runner-backend --tail=100
+kubectl -n runner get svc runner-frontend
+kubectl -n runner port-forward svc/runner-frontend 8081:80
+

@@ -1,0 +1,26 @@
+# Seed minimal data so the UI has something to display
+# Option A: Run inside the cluster (no port-forward required)
+NS=runner
+BACKEND_URL="http://runner-runner-backend.${NS}.svc.cluster.local"
+
+# 1) Set a weekly goal for this Monday
+WEEK_START=$(date -v-mon +%F 2>/dev/null || date -d "last-mon" +%F)
+kubectl -n ${NS} run seeder-goal --image=curlimages/curl:8.7.1 --rm -it --restart=Never -- \
+  -sS -X PUT "${BACKEND_URL}/goals/${WEEK_START}" -H 'Content-Type: application/json' \
+  -d '{"goal_miles": 20}'
+
+# 2) Create a few runs this week
+TODAY=$(date +%F)
+kubectl -n ${NS} run seeder-run1 --image=curlimages/curl:8.7.1 --rm -it --restart=Never -- \
+  -sS -X POST "${BACKEND_URL}/runs/" -H 'Content-Type: application/json' \
+  -d '{"date":"'${TODAY}'","title":"Easy 3mi","notes":"seed","distance_mi":3,"duration":"00:27:00","run_type":"easy"}'
+
+kubectl -n ${NS} run seeder-run2 --image=curlimages/curl:8.7.1 --rm -it --restart=Never -- \
+  -sS -X POST "${BACKEND_URL}/runs/" -H 'Content-Type: application/json' \
+  -d '{"date":"'${TODAY}'","title":"Tempo 4mi","notes":"seed","distance_mi":4,"duration":"00:32:00","run_type":"workout"}'
+
+# Option B: If you prefer port-forwarding the backend locally
+# kubectl -n runner port-forward svc/runner-runner-backend 8080:80
+# curl -sS -X PUT "http://localhost:8080/goals/${WEEK_START}" -H 'Content-Type: application/json' -d '{"goal_miles": 20}'
+# curl -sS -X POST "http://localhost:8080/runs/" -H 'Content-Type: application/json' -d '{"date":"'${TODAY}'","title":"Easy 3mi","notes":"seed","distance_mi":3,"duration":"00:27:00","run_type":"easy"}'
+

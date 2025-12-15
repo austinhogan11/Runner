@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "runner.fullname" . }}-frontend
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "runner.labels" . | nindent 4 }}
+    app: runner-frontend
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      app: runner-frontend
+  template:
+    metadata:
+      labels:
+        app: runner-frontend
+        {{- include "runner.labels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: frontend
+        image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+        imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: nginx-conf
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: default.conf
+        env:
+        - name: VITE_API_URL
+          value: {{ .Values.frontend.apiBase | quote }}
+      volumes:
+      - name: nginx-conf
+        configMap:
+          name: {{ include "runner.fullname" . }}-frontend-nginx
+          items:
+          - key: default.conf
+            path: default.conf

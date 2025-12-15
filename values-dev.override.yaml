@@ -1,0 +1,9 @@
+backend:
+image:
+repository: runneracrdev.azurecr.io/runner-backend
+tag: smoke
+databaseUrl: "postgresql://runneradmin:UXkvSA+X08DHQJEM4eLWJLrD@runner-pg-postgresql.runner.svc.cluster.local:5432/runner?sslmode=disable"
+frontend:
+image:
+repository: runneracrdev.azurecr.io/runner-frontend
+tag: smoke-api

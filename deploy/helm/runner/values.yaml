@@ -1,0 +1,67 @@
+namespace: runner
+
+backend:
+  image:
+    repository: runneracrdev.azurecr.io/runner-backend
+    tag: smoke
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8000
+  env:
+    RUN_MIGRATIONS: "true"
+  extraEnv: []
+  # Option 1: Provide a complete DATABASE_URL via a Secret this chart creates
+  # by setting `backend.databaseUrl`. This renders a Secret named
+  # "<release>-runner-backend-env" with key DATABASE_URL and wires it to the pod.
+  databaseUrl: ""
+  # Option 2: Auto-compose DATABASE_URL from Bitnami Postgres secret and known DNS.
+  # This avoids quoting issues on the CLI. When enabled, the chart will set PG* envs
+  # and start the container via a shell that exports DATABASE_URL before entrypoint.
+  autoDbFromBitnami:
+    enabled: false
+    secretName: runner-pg-postgresql
+    passwordKey: password
+    host: runner-pg-postgresql.runner.svc.cluster.local
+    port: 5432
+    database: runner
+    user: runneradmin
+  probes:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+frontend:
+  image:
+    repository: runneracrdev.azurecr.io/runner-frontend
+    tag: smoke
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 80
+  apiBase: "/api"
+
+# Ingress configuration (disabled by default)
+ingress:
+  enabled: false
+  className: nginx
+  host: ""   # e.g., runner.dev.example.com; leave empty to use IP
+  annotations: {}
+  tls:
+    enabled: false
+    secretName: ""  # pre-created TLS secret name when tls.enabled=true
+
+# Separate API Ingress with regex + rewrite (enabled by default when ingress.enabled)
+apiIngress:
+  enabled: true
+  className: nginx
+  host: ""
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: "/$2"
+  path: "/api(/|$)(.*)"
+  pathType: ImplementationSpecific
