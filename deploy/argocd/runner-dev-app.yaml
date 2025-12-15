@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: https://github.com/austinhogan11/Runner
     targetRevision: main
-    path: projects/Runner/deploy/helm/runner
+    path: deploy/helm/runner
     helm:
       valueFiles:
         - values-dev.yaml
@@ -21,4 +21,3 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-
