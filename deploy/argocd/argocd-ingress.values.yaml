@@ -1,0 +1,12 @@
+server:
+  # Expose Argo via the cluster ingress controller (nginx)
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - argo.chosenrunning.com
+    annotations:
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+

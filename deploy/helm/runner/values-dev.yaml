@@ -20,7 +20,9 @@ frontend:
 ingress:
   enabled: true
   className: nginx
+  host: runner.chosenrunning.com
 
 apiIngress:
   enabled: true
-
+  className: nginx
+  host: runner.chosenrunning.com
