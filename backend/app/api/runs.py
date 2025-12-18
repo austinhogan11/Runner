@@ -1377,3 +1377,49 @@ def get_weekly_mileage(
         )
 
     return results
+
+
+@router.delete("/purge")
+def purge_all_runs(confirm: str = Query("no"), db: Session = Depends(get_db)):
+    """Dangerous: delete ALL run data (runs, files, splits, metrics, track).
+
+    Guard rails:
+      - Requires env settings.allow_purge = True
+      - Requires confirm=yes query param
+    Intended for dev reset/seeding only.
+    """
+    if not settings.allow_purge:
+        raise HTTPException(status_code=403, detail="Purge disabled (set ALLOW_PURGE=true to enable)")
+    if confirm.lower() != "yes":
+        raise HTTPException(status_code=400, detail="Add ?confirm=yes to proceed")
+
+    # Delete dependent tables first, then runs
+    db.query(RunSplit).delete()
+    db.query(RunTrack).delete()
+    db.query(RunMetrics).delete()
+    db.query(RunFile).delete()
+    db.query(Run).delete()
+    db.commit()
+
+    # Best effort: clean uploads dir
+    try:
+        base = settings.uploads_dir
+        if base and os.path.isdir(base):
+            for sub in ("runs", "imports"):
+                path = os.path.join(base, sub)
+                if os.path.isdir(path):
+                    for root, dirs, files in os.walk(path, topdown=False):
+                        for f in files:
+                            try:
+                                os.remove(os.path.join(root, f))
+                            except Exception:
+                                pass
+                        for d in dirs:
+                            try:
+                                os.rmdir(os.path.join(root, d))
+                            except Exception:
+                                pass
+    except Exception:
+        pass
+
+    return {"message": "All run data purged"}

@@ -69,8 +69,14 @@ spec:
               exec ./entrypoint.sh
           {{- end }}
 
-          {{- if .Values.backend.databaseUrl }}
+          {{- if or .Values.backend.databaseUrl (gt (len .Values.backend.extraEnvFromSecrets) 0) }}
           envFrom:
+            {{- if .Values.backend.databaseUrl }}
             - secretRef:
                 name: {{ include "runner.fullname" . }}-backend-env
+            {{- end }}
+            {{- range .Values.backend.extraEnvFromSecrets }}
+            - secretRef:
+                name: {{ . }}
+            {{- end }}
           {{- end }}

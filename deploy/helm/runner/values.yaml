@@ -13,6 +13,9 @@ backend:
   env:
     RUN_MIGRATIONS: "true"
   extraEnv: []
+  # Reference existing Kubernetes Secrets to populate env vars in the container
+  # Example: ["runner-strava"] to mount STRAVA_* variables
+  extraEnvFromSecrets: []
   # Option 1: Provide a complete DATABASE_URL via a Secret this chart creates
   # by setting `backend.databaseUrl`. This renders a Secret named
   # "<release>-runner-backend-env" with key DATABASE_URL and wires it to the pod.
@@ -65,3 +68,9 @@ apiIngress:
     nginx.ingress.kubernetes.io/rewrite-target: "/$2"
   path: "/api(/|$)(.*)"
   pathType: ImplementationSpecific
+
+# Optional daily Strava sync
+stravaSync:
+  enabled: false
+  # UTC schedule; 09:00 UTC ~ 4am US Eastern during Standard Time
+  schedule: "0 9 * * *"
