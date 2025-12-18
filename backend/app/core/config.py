@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     strava_redirect_uri: str | None = None
     strava_tokens_path: str = "uploads/strava/tokens.json"
 
+    # Dangerous admin operations (dev-only). When true, enables endpoints
+    # like DELETE /runs/purge to wipe all run data.
+    allow_purge: bool = False
+
     # Allow empty env strings for optional fields
     @field_validator("hr_max", mode="before")
     @classmethod

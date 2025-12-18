@@ -2,6 +2,13 @@ backend:
   image:
     repository: runneracrdev.azurecr.io/runner-backend
     tag: smoke
+  extraEnv:
+    # Toggle to allow DELETE /api/runs/purge (dev only)
+    - name: ALLOW_PURGE
+      value: "true"
+  # Mount Strava OAuth env vars from this Secret
+  extraEnvFromSecrets:
+    - runner-strava
   autoDbFromBitnami:
     enabled: true
     user: runneradmin
@@ -26,3 +33,8 @@ apiIngress:
   enabled: true
   className: nginx
   host: ""
+
+# Enable daily Strava sync (last 24h)
+stravaSync:
+  enabled: true
+  schedule: "0 9 * * *"

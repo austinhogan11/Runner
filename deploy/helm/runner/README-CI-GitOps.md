@@ -38,3 +38,23 @@ Notes
 - Avoid --reuse-values with Helm; rely on the values-dev.yaml to prevent type drift.
 - Frontend is built with VITE_API_URL=/api and Ingress routes / to frontend, /api to backend with regex + rewrite.
 
+Strava (Phase 1)
+- Create a secret with your Strava app creds and redirect URL:
+  kubectl -n runner create secret generic runner-strava \
+    --from-literal=STRAVA_CLIENT_ID=<id> \
+    --from-literal=STRAVA_CLIENT_SECRET=<secret> \
+    --from-literal=STRAVA_REDIRECT_URI=http://runner.chosenrunning.com/api/strava/callback
+
+- In values-dev.yaml add:
+  backend:
+    extraEnvFromSecrets:
+      - runner-strava
+
+- Optional daily sync (last 24h):
+  stravaSync:
+    enabled: true
+    schedule: "0 9 * * *"  # 09:00 UTC
+
+The CronJob calls the in-cluster backend URL:
+http://<release>-runner-backend.runner.svc.cluster.local/api/strava/sync?weeks=1
+

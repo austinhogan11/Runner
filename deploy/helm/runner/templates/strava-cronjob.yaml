@@ -1,0 +1,26 @@
+{{- if .Values.stravaSync.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "runner.fullname" . }}-strava-sync
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "runner.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.stravaSync.schedule | quote }}
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: sync
+              image: curlimages/curl:8.7.1
+              args:
+                - "-sS"
+                - "--fail"
+                - "http://{{ include "runner.fullname" . }}-backend.{{ .Values.namespace }}.svc.cluster.local/api/strava/sync?weeks=1"
+{{- end }}
+
