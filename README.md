@@ -95,3 +95,4 @@ This is a lightweight, modern stack focused on fast local iteration and clear da
   - Exercises `/` and a simple create/list run cycle with in‑memory SQLite.
 - Frontend: Node’s built‑in `node:test` runner for pure utility functions in `src/lib/format.ts`.
   - Run with `npm run test` in `frontend/`.
+
